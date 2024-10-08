@@ -700,3 +700,128 @@ Query not event(endS) is false.
 Query not event(endR) is false.
 ```
 # Definire e verificare un protocollo di firma semplice per aggiornamenti software.
+In questa parte del laboratorio cerchiamo di sviluppare e verificare il modello di un protocollo semplice per garantire l'autenticità di un software emesso e consegnato da un fornitore di software. 
+Modelliamo il file del software tramite un nome (sw) e i suoi metadati associati, come nome del software, autore, versione, ecc., tramite un altro nome (swd). Utilizziamo un processo per modellare l'emittente del software e assumiamo che l'emittente emetta un software sw e i suoi metadati associati swd protetti da una firma (assumiamo che l'emittente disponga di una coppia di chiavi private/pubbliche). 
+Dall'altro lato, modelliamo un destinatario del software come un altro processo che controlla la firma prima di accettare il software con i suoi metadati come autentici.
+ Assumendo che l'emittente emetta diversi pacchetti software distinti, ognuno dei quali include un file software e i suoi metadati corrispondenti, vogliamo assicurarci che il destinatario accetti come validi solo i pacchetti identici a quelli emessi dall'emittente e non file software falsi né metadati falsi né altre combinazioni (ad es. file software corretto con metadati errati). 
+ ## Analisi
+ Modellazione del Software
+
+    Rappresentazione del Software:
+        Il software è rappresentato da un nome, denotato come sw, che rappresenta il file del software stesso.
+        Le informazioni associate al software, come il nome del software, l'autore, la versione, ecc., sono rappresentate da un altro nome, denotato come swd (software metadata).
+
+    Processo di Emissione:
+        Si utilizza un processo per modellare l'emittente del software (il fornitore). Questo processo si occupa di emettere il software (sw) e le sue informazioni associate (swd) e di proteggerli mediante una firma.
+        Si assume che l'emittente possieda una coppia di chiavi privata/pubblica, che viene utilizzata per generare la firma. La chiave privata viene utilizzata per firmare, mentre la chiave pubblica sarà utilizzata dal ricevente per verificare la firma.
+
+Modellazione del Ricevente
+
+    Processo del Ricevente:
+        Dall'altro lato, si modella un ricevente del software come un altro processo. Prima di accettare il software e le sue informazioni associate come autentici, il ricevente controlla la firma.
+        Questo passaggio è cruciale perché garantisce che solo il software genuino e le informazioni associate siano accettati.
+
+Verifica dell'Autenticità
+
+    Gestione di Diversi Pacchetti Software:
+        Si assume che l'emittente possa emettere diversi pacchetti software distinti, ciascuno composto da un file software e dai relativi metadati.
+        È fondamentale che il ricevente accetti come validi solo i pacchetti identici a quelli emessi dall'emittente, escludendo software falsi, metadati falsi o combinazioni errate (ad esempio, un file software corretto con metadati errati).
+
+Obiettivo del Protoccolo
+
+    Specificare il Protocollo:
+        Si richiede di specificare il protocollo e le proprietà descritte in un script ProVerif, un tool di verifica formale per analizzare la sicurezza dei protocolli crittografici.
+        L'obiettivo è verificare che il modello specificato soddisfi le condizioni di autenticità e integrità, assicurando che il ricevente accetti solo il software legittimo.
+
+Conclusione
+
+In sintesi, si tratta di sviluppare un modello formale che simuli il comportamento di un fornitore di software e di un ricevente, con un focus particolare sulla sicurezza e sull'autenticità delle informazioni scambiate. L'uso di chiavi crittografiche per la firma e la verifica gioca un ruolo cruciale in questo processo, e l'obiettivo finale è garantire che solo il software legittimo venga accettato dal ricevente.
+ ## Codice 
+```bash
+ (* 
+   Sample signature protocol 
+ *)
+
+type pkey.	(* public key *)  (* Definisce un tipo pkey che rappresenta una chiave pubblica *)
+type skey.	(* private key *) (* Definisce un tipo skey che rappresenta una chiave privata *)
+type keymat.	(* key material *) (* Definisce un tipo keymat che rappresenta i materiali della chiave *)
+type result.	(* result of check signature *) (* Definisce un tipo result che rappresenta il risultato del controllo della firma *)
+type string.  (* Definisce un tipo string, che rappresenta una sequenza di caratteri *)
+
+free c:channel.		(* the public channel *) (* Dichiara un canale pubblico c per la comunicazione *)
+free sw:bitstring. 	(* the software *) (* Dichiara una variabile sw di tipo bitstring, rappresentante il software *)
+free swd:string.		(* the software description *) (* Dichiara una variabile swd di tipo string, rappresentante la descrizione del software *)
+
+(* Public-key Encryption *)
+fun penc(bitstring, pkey): bitstring.  (* Funzione di cifratura pubblica, che restituisce un bitstring *)
+fun pk(keymat): pkey.  (* Funzione che genera una chiave pubblica a partire dai materiali della chiave *)
+fun sk(keymat): skey.  (* Funzione che genera una chiave privata a partire dai materiali della chiave *)
+reduc forall x:bitstring, y:keymat; pdec(penc(x,pk(y)),sk(y)) = x.  (* Riduzione per decriptare il bitstring originale *)
+
+(* Signatures *)
+fun ok():result.  (* Funzione che restituisce un risultato di successo per il controllo della firma *)
+fun sign(bitstring, skey): bitstring.  (* Funzione di firma che restituisce un bitstring firmato *)
+reduc forall m:bitstring, y:keymat; getmess(sign(m,sk(y))) = m.  (* Riduzione per garantire che il messaggio originale possa essere recuperato *)
+reduc forall m:bitstring, y:keymat; checksign(sign(m,sk(y)), pk(y)) = ok().  (* Riduzione per verificare che la firma sia valida *)
+
+event issued(bitstring,string).  (* Evento che indica che un messaggio è stato emesso *)
+event authenticated(bitstring,string).  (* Evento che indica che un messaggio è stato autenticato *)
+
+query sw: bitstring, swd: string;  (* Interroga per il software e la sua descrizione *)
+	event(authenticated(sw,swd)) ==> event(issued(sw,swd)).  (* Se il messaggio è autenticato, deve essere emesso *)
+
+(* Test reachability *)
+event endS().  (* Evento che indica la fine del processo S *)
+event endR().  (* Evento che indica la fine del processo R *)
+
+query event(endS()).  (* Interroga se l'evento endS è stato emesso *)
+query event(endR()).  (* Interroga se l'evento endR è stato emesso *)
+
+(* The process *)
+
+let pS(kpS: keymat, sw:bitstring, swd: string) =  (* Definizione del processo S con materiali della chiave, software e descrizione *)
+	 event issued(sw,swd);  (* Emissione dell'evento issued con sw e swd *)
+         out(c, (sign((sw,swd), sk(kpS))) );  (* Invia il messaggio firmato sul canale pubblico *)
+	 event endS(); 0.  (* Emissione dell'evento endS e termina il processo *)
+
+let pR(pkS: pkey) =  (* Definizione del processo R con una chiave pubblica *)
+         in(c, y:bitstring);  (* Riceve un messaggio dal canale pubblico *)
+	 let (ysw: bitstring ,yswd: string) = getmess(y) in  (* Estrae il messaggio e la descrizione *)
+         if checksign(y, pkS)=ok() then  (* Controlla se la firma è valida *)
+	 event authenticated(ysw,yswd);  (* Emissione dell'evento authenticated se la firma è valida *)
+	 event endR(); 0.  (* Emissione dell'evento endR e termina il processo *)
+
+process 
+         new kpS:keymat;  (* Crea nuovi materiali della chiave per il processo S *)
+	 !(new sw:bitstring; new swd:string; !pS(kpS,sw,swd))  (* Avvia il processo S con nuovi sw e swd *)
+         | !pR(pk(kpS))  (* Avvia il processo R con la chiave pubblica corrispondente *)
+
+ Creazione dei Materiali della Chiave
+# new kpS:keymat :  Questa riga crea un nuovo oggetto `kpS` di tipo `keymat`, che rappresenta i materiali della chiave necessari per il processo S (l'emittente del software). Questo oggetto conterrà le informazioni necessarie per generare la chiave pubblica e la chiave privata per la firma e la verifica.
+### . Avvio del Processo S
+# (new sw:bitstring; new swd:string; !pS(kpS,sw,swd))`**: Questa riga fa diverse cose:
+# new sw:bitstring; new swd:string;`: Qui vengono create nuove variabili `sw` e `swd`. `sw` rappresenta il pacchetto software (in formato `bitstring`), mentre `swd` rappresenta i metadati associati (in formato `string`).
+ # !pS(kpS, sw, swd)`: Viene avviato il processo `pS` con i materiali della chiave `kpS` e i nuovi pacchetti `sw` e `swd`. L'operatore `!` indica che il processo può essere eseguito ripetutamente. Questo processo si occuperà di emettere il pacchetto software e di firmarlo.
+### 3. Avvio del Processo R
+#`| !pR(pk(kpS))`**: Questa riga avvia il processo `pR`, che rappresenta il ricevente del software.
+#`pk(kpS)`**: Qui viene chiamata la funzione `pk` per generare la chiave pubblica corrispondente ai materiali della chiave `kpS`. La chiave pubblica è necessaria per il processo di verifica della firma.
+# L'operatore `|` indica che i processi `pS` e `pR` possono operare in parallelo. In altre parole, mentre l'emittente `pS` emette e firma i pacchetti software, il ricevente `pR` è pronto a ricevere e verificare i pacchetti.
+
+### In Sintesi
+
+#Questo blocco di codice rappresenta il nucleo dell'interazione tra un emittente e un ricevente nel protocollo di autenticazione del software. Viene creato un nuovo contesto per il processo S, che si occupa di generare e firmare i pacchetti software, e parallelamente viene avviato il processo R, che è responsabile della ricezione e della verifica della firma di tali pacchetti. Questa struttura garantisce che entrambi i processi possano operare in modo indipendente ma coordinato, consentendo la verifica dell'autenticità dei pacchetti software emessi.
+
+(* EXPECTPV
+Query event(authenticated(sw_3,swd_3)) ==> event(issued(sw_3,swd_3)) is true.  (* Verifica che l'evento autenticato implichi l'evento emesso *)
+Query not event(endS) is false.  (* Verifica che l'evento endS non sia stato emesso *)
+Query not event(endR) is false.  (* Verifica che l'evento endR non sia stato emesso *)
+END *)
+```
+
+Risultato dello script : 
+```bash
+Verification summary:
+Query event(authenticated(sw_3,swd_3)) ==> event(issued(sw_3,swd_3)) is true.
+Query not event(endS) is false.
+Query not event(endR) is false.
+```
