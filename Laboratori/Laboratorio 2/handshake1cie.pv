@@ -1,0 +1,75 @@
+ (*
+   Sample handshake protocol (typed version)
+ *)
+
+type pkey.	(* public key *)
+type skey.	(* private key *)
+type keymat.	(* key material *)
+type result.	(* result of check signature *)
+
+free c:channel.			(* the public channel *)
+free s:bitstring [private]. 	(* the secret *)
+
+(* Public-key Encryption *)
+fun penc(bitstring, pkey): bitstring.
+fun pk(keymat): pkey.
+fun sk(keymat): skey.
+reduc forall x:bitstring, y:keymat; pdec(penc(x,pk(y)),sk(y)) = x.
+
+(* Signatures *)
+fun ok():result.
+fun sign(bitstring, skey): bitstring.
+reduc forall m:bitstring, y:keymat; getmess(sign(m,sk(y))) = m.
+reduc forall m:bitstring, y:keymat; checksign(sign(m,sk(y)), pk(y)) = ok().
+
+(* Shared-key cryptography *)
+fun senc(bitstring, bitstring): bitstring.
+reduc forall x: bitstring, y: bitstring; sdec(senc(x,y),y) = x.
+
+
+(* Test whether s is secret *)
+query attacker(s).
+
+(* Test reachability *)
+event endA().
+event endB().
+query event(endA()).
+query event(endB()).
+
+(* Test authentication *)
+event bA(pkey,pkey,bitstring).
+event eB(pkey,pkey,bitstring).
+query x:pkey,y:pkey,z:bitstring; inj-event(eB(x,y,z)) ==> inj-event(bA(x,y,z)).
+
+(* The process *)
+
+let pA(kpA: keymat, pkB: pkey) =
+         new k:bitstring;
+	 event bA(pk(kpA),pkB,k);
+         out(c, penc(sign(k, sk(kpA)), pkB));
+ 	 in(c,x:bitstring);
+         let xs=sdec(x, k) in 
+         event endA(); 0. 
+
+let pB(kpB: keymat, pkA: pkey) =
+         in(c, y:bitstring); 
+         let y1=pdec(y, sk(kpB)) in
+         if checksign(y1, pkA)=ok() then
+         let xk=getmess(y1) in
+	 event eB(pkA,pk(kpB),xk);
+         out(c, senc(s, xk)); 
+	 event endB(); 0. 
+
+process 
+         new kpA:keymat; new kpB:keymat;
+         (!out(c, pk(kpA)); 0 | !out(c, pk(kpB)); 0 |
+          !pA(kpA, pk(kpB))  | !pB(kpB, pk(kpA))
+         )
+
+
+(* EXPECTPV
+Query not attacker(s[]) is true.
+Query not event(endA) is false.
+Query not event(endB) is false.
+Query inj-event(eB(x_1,y_1,z)) ==> inj-event(bA(x_1,y_1,z)) is false.
+END *)

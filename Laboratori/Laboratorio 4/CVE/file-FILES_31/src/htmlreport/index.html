@@ -1,0 +1,399 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>PVS-Studio HTML Report</title>
+<style type="text/css">
+   TABLE {
+    width: 100%;
+   }
+   #col_group, #col_level, #col_code, #col_cwe, #col_sast {
+    text-align: center;
+    white-space: nowrap;
+    width: 0;
+   }
+   #col_file, #col_info, #col_projects {
+    white-space: nowrap;
+    text-align: left;
+    width: 0;
+   }
+   #col_info {
+    width: 120px;
+   }
+   #col_message {
+    text-align: left;
+   }
+  </style>
+<link rel="stylesheet" href="style.css" />
+<script type="text/javascript" src="script.js"></script>
+<script type="text/javascript" src="toggle-cell.js"></script>
+</head>
+<body>
+  <div class="header">
+    <img src="images/logo.png" alt=""/>
+    <h1>PVS-Studio Analysis Results</h1>
+    <br class="clear">
+  </div>
+  <table cellpadding="0" cellspacing="0" border="0" class="infotopic">
+     <tr><th id="col_info">Date:</th><td>Sun Oct 13 18:23:19 2024</td></tr>
+     <tr><th id="col_info">PVS-Studio Version:</th><td>7.33.85330.89</td></tr>
+     <tr><th id="col_info">Command Line:</th><td>plog-converter -a GA\:1,2,3 -t fullhtml -o ./htmlreport ./project.log </td></tr>
+     <tr><th id="col_info">Total Warnings (GA):</th><td>48</td></tr>
+  </table>
+  <div class="toggle-box">
+    <label>
+      Show full paths
+    <input class="path-toggle toggle-button" type="checkbox" name="toggle-path" onclick="togglePathView()" />
+    </label>
+  </div>
+  <table cellpadding="0" cellspacing="0" border="0" class="sortable" id="sorter">
+    <tr>
+      <th class="gsort">Group</th>
+      <th>Location</th>
+      <th class="lsort">Level</th>
+      <th class="vsort">Code</th>
+      <th>Message</th>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln1368">apprentice.c:1368</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln1368">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:1368</a></td>
+      <td id="col_level" style="color:#FF0000"><b>High</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v595/">V595</td>
+      <td id="col_message">The 'mset[j].me' pointer was utilized before it was verified against nullptr. Check lines: 1368, 1370.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln1830">apprentice.c:1830</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln1830">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:1830</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v519/">V519</td>
+      <td id="col_message">The 'm' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 1827, 1830.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln2504">apprentice.c:2504</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln2504">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:2504</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v519/">V519</td>
+      <td id="col_message">The '* estr' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 2502, 2504.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln2961">apprentice.c:2961</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln2961">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:2961</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression 'st.st_size &lt; 8' is always true.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln3112">apprentice.c:3112</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln3112">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:3112</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression 'fd != - 1' is always true.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln2959">apprentice.c:2959</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln2959">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:2959</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v560/">V560</td>
+      <td id="col_message">A part of conditional expression is always false: st.st_size &gt; 0x7fffffffffffffffL.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln1338">apprentice.c:1338</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln1338">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:1338</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v701/">V701</td>
+      <td id="col_message">realloc() possible leak: when realloc() fails in allocating memory, original pointer 'filearr' is lost. Consider assigning realloc() to a temporary pointer.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln813">apprentice.c:813</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln813">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:813</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1037/">V1037</td>
+      <td id="col_message">Two or more case-branches perform the same actions. Check lines: 813, 846</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln1843">apprentice.c:1843</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln1843">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:1843</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1086/">V1086</td>
+      <td id="col_message">A call of the 'memset' function will lead to underflow of the buffer 'm'.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln3032">apprentice.c:3032</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln3032">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:3032</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the seventh actual argument of the 'file_error' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/apprentice.c_0.html#ln599">apprentice.c:599</a><a target="_blank" class="file-link display-none" href="sources/apprentice.c_0.html#ln599">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/apprentice.c:599</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v774/">V774</td>
+      <td id="col_message">The 'ml' pointer was used after the memory was released.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/ascmagic.c_1.html#ln181">ascmagic.c:181</a><a target="_blank" class="file-link display-none" href="sources/ascmagic.c_1.html#ln181">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/ascmagic.c:181</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v536/">V536</td>
+      <td id="col_message">Be advised that the utilized constant value is represented by an octal form. Oct: '\033', Dec: 27.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/ascmagic.c_1.html#ln200">ascmagic.c:200</a><a target="_blank" class="file-link display-none" href="sources/ascmagic.c_1.html#ln200">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/ascmagic.c:200</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression 'subtype_mime' is always false.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/ascmagic.c_1.html#ln235">ascmagic.c:235</a><a target="_blank" class="file-link display-none" href="sources/ascmagic.c_1.html#ln235">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/ascmagic.c:235</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression 'subtype' is always false.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/encoding.c_2.html#ln83">encoding.c:83</a><a target="_blank" class="file-link display-none" href="sources/encoding.c_2.html#ln83">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/encoding.c:83</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v641/">V641</td>
+      <td id="col_message">The size of the allocated memory buffer is not a multiple of the element size.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/file.c_3.html#ln390">file.c:390</a><a target="_blank" class="file-link display-none" href="sources/file.c_3.html#ln390">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/file.c:390</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression 'magic' is always true.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/file.h_4.html#ln448">file.h:448</a><a target="_blank" class="file-link display-none" href="sources/file.h_4.html#ln448">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/file.h:448</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1071/">V1071</td>
+      <td id="col_message">Consider inspecting the 'file_printf' function. The return value is not always used. Total calls: 61, discarded results: 1.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/file.h_4.html#ln542">file.h:542</a><a target="_blank" class="file-link display-none" href="sources/file.h_4.html#ln542">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/file.h:542</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1059/">V1059</td>
+      <td id="col_message">The 'strerror' macro name overrides a reserved name from C standard. This may lead to undefined behavior.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/file.h_4.html#ln547">file.h:547</a><a target="_blank" class="file-link display-none" href="sources/file.h_4.html#ln547">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/file.h:547</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1059/">V1059</td>
+      <td id="col_message">The 'strtoul' macro name overrides a reserved name from C standard. This may lead to undefined behavior.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/fmtcheck.c_5.html#ln138">fmtcheck.c:138</a><a target="_blank" class="file-link display-none" href="sources/fmtcheck.c_5.html#ln138">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/fmtcheck.c:138</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v793/">V793</td>
+      <td id="col_message">It is odd that the result of the 'sh + lg + quad + longdouble' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/fmtcheck.c_5.html#ln145">fmtcheck.c:145</a><a target="_blank" class="file-link display-none" href="sources/fmtcheck.c_5.html#ln145">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/fmtcheck.c:145</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v793/">V793</td>
+      <td id="col_message">It is odd that the result of the 'sh + lg + quad' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/fmtcheck.c_5.html#ln150">fmtcheck.c:150</a><a target="_blank" class="file-link display-none" href="sources/fmtcheck.c_5.html#ln150">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/fmtcheck.c:150</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v793/">V793</td>
+      <td id="col_message">It is odd that the result of the 'sh + lg + quad + longdouble' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/fmtcheck.c_5.html#ln155">fmtcheck.c:155</a><a target="_blank" class="file-link display-none" href="sources/fmtcheck.c_5.html#ln155">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/fmtcheck.c:155</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v793/">V793</td>
+      <td id="col_message">It is odd that the result of the 'sh + lg + quad + longdouble' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/fmtcheck.c_5.html#ln160">fmtcheck.c:160</a><a target="_blank" class="file-link display-none" href="sources/fmtcheck.c_5.html#ln160">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/fmtcheck.c:160</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v793/">V793</td>
+      <td id="col_message">It is odd that the result of the 'sh + lg + quad + longdouble' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/magic.c_6.html#ln608">magic.c:608</a><a target="_blank" class="file-link display-none" href="sources/magic.c_6.html#ln608">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/magic.c:608</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1037/">V1037</td>
+      <td id="col_message">Two or more case-branches perform the same actions. Check lines: 608, 611</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/magic.c_6.html#ln353">magic.c:353</a><a target="_blank" class="file-link display-none" href="sources/magic.c_6.html#ln353">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/magic.c:353</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1095/">V1095</td>
+      <td id="col_message">Usage of potentially invalid handle. The value should be non-negative. Check the 'fd' argument.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/print.c_7.html#ln70">print.c:70</a><a target="_blank" class="file-link display-none" href="sources/print.c_7.html#ln70">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/print.c:70</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression is always true.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/print.c_7.html#ln117">print.c:117</a><a target="_blank" class="file-link display-none" href="sources/print.c_7.html#ln117">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/print.c:117</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v547/">V547</td>
+      <td id="col_message">Expression is always true.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/print.c_7.html#ln69">print.c:69</a><a target="_blank" class="file-link display-none" href="sources/print.c_7.html#ln69">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/print.c:69</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the fourth actual argument of the 'fprintf' function. The UNSIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/print.c_7.html#ln140">print.c:140</a><a target="_blank" class="file-link display-none" href="sources/print.c_7.html#ln140">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/print.c:140</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the third actual argument of the 'fprintf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/print.c_7.html#ln145">print.c:145</a><a target="_blank" class="file-link display-none" href="sources/print.c_7.html#ln145">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/print.c:145</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the third actual argument of the 'fprintf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readcdf.c_8.html#ln246">readcdf.c:246</a><a target="_blank" class="file-link display-none" href="sources/readcdf.c_8.html#ln246">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readcdf.c:246</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1004/">V1004</td>
+      <td id="col_message">The 'c' pointer was used unsafely after it was verified against nullptr. Check lines: 241, 246.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readelf.c_9.html#ln516">readelf.c:516</a><a target="_blank" class="file-link display-none" href="sources/readelf.c_9.html#ln516">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readelf.c:516</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v560/">V560</td>
+      <td id="col_message">A part of conditional expression is always true: descsz &lt;= 20.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readelf.c_9.html#ln500">readelf.c:500</a><a target="_blank" class="file-link display-none" href="sources/readelf.c_9.html#ln500">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readelf.c:500</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the third actual argument of the 'file_printf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readelf.c_9.html#ln591">readelf.c:591</a><a target="_blank" class="file-link display-none" href="sources/readelf.c_9.html#ln591">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readelf.c:591</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the fifth actual argument of the 'file_printf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readelf.c_9.html#ln591">readelf.c:591</a><a target="_blank" class="file-link display-none" href="sources/readelf.c_9.html#ln591">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readelf.c:591</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the fourth actual argument of the 'file_printf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/readelf.c_9.html#ln591">readelf.c:591</a><a target="_blank" class="file-link display-none" href="sources/readelf.c_9.html#ln591">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/readelf.c:591</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the third actual argument of the 'file_printf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1704">softmagic.c:1704</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1704">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1704</a></td>
+      <td id="col_level" style="color:#FF0000"><b>High</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v763/">V763</td>
+      <td id="col_message">Parameter 'flags' is always rewritten in function body before being used.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln771">softmagic.c:771</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln771">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:771</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1037/">V1037</td>
+      <td id="col_message">Two or more case-branches perform the same actions. Check lines: 771, 778</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln784">softmagic.c:784</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln784">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:784</a></td>
+      <td id="col_level" style="color:#FFA500"><b>Medium</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v1037/">V1037</td>
+      <td id="col_message">Two or more case-branches perform the same actions. Check lines: 784, 790</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1004">softmagic.c:1004</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1004">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1004</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: (float) m-&gt;_u._mask == 0. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1011">softmagic.c:1011</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1011">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1011</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: (double) m-&gt;_u._mask == 0. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1770">softmagic.c:1770</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1770">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1770</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: fv != fl. It's probably better to use a comparison with defined precision: fabs(A - B) &gt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1774">softmagic.c:1774</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1774">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1774</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: fv == fl. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1803">softmagic.c:1803</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1803">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1803</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: dv != dl. It's probably better to use a comparison with defined precision: fabs(A - B) &gt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1807">softmagic.c:1807</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1807">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1807</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v550/">V550</td>
+      <td id="col_message">An odd precise comparison: dv == dl. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1171">softmagic.c:1171</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1171">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1171</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the fourth actual argument of the 'fprintf' function. The SIGNED integer type argument is expected.</td>
+    </tr>
+    <tr>
+      <td id="col_group">General Analysis</td>
+      <td id="col_file"><a target="_blank" class="file-link" href="sources/softmagic.c_10.html#ln1580">softmagic.c:1580</a><a target="_blank" class="file-link display-none" href="sources/softmagic.c_10.html#ln1580">/home/roberto/Scaricati/Security_verification_testing/RepoGithub/Security-verification-and-testing/Laboratori/Laboratorio 4/CVE/file-FILES_31/src/softmagic.c:1580</a></td>
+      <td id="col_level" style="color:#CACA00"><b>Low</b></td>
+      <td id="col_code"><a target="_blank" href="https://pvs-studio.com/en/docs/warnings/v576/">V576</td>
+      <td id="col_message">Incorrect format. Consider checking the third actual argument of the 'file_printf' function. Under certain conditions the pointer can be null.</td>
+    </tr>
+  </table>
+<script type="text/javascript">
+var sorter=new table.sorter("sorter");
+sorter.init("sorter",0);
+</script>
+</body>
+</html>

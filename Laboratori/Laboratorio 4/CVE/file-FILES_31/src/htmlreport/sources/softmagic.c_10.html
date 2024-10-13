@@ -1,0 +1,2128 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>softmagic.c</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.5.1.min.js"></script>
+</head>
+<body>
+<pre><code class = "cpp">
+<a name="ln1">// This is a personal academic project. Dear PVS-Studio, please check it.</a>
+<a name="ln2">// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: http://www.viva64.com</a>
+<a name="ln3">/*</a>
+<a name="ln4"> * Copyright (c) Ian F. Darwin 1986-1995.</a>
+<a name="ln5"> * Software written by Ian F. Darwin and others;</a>
+<a name="ln6"> * maintained 1995-present by Christos Zoulas and others.</a>
+<a name="ln7"> *</a>
+<a name="ln8"> * Redistribution and use in source and binary forms, with or without</a>
+<a name="ln9"> * modification, are permitted provided that the following conditions</a>
+<a name="ln10"> * are met:</a>
+<a name="ln11"> * 1. Redistributions of source code must retain the above copyright</a>
+<a name="ln12"> *    notice immediately at the beginning of the file, without modification,</a>
+<a name="ln13"> *    this list of conditions, and the following disclaimer.</a>
+<a name="ln14"> * 2. Redistributions in binary form must reproduce the above copyright</a>
+<a name="ln15"> *    notice, this list of conditions and the following disclaimer in the</a>
+<a name="ln16"> *    documentation and/or other materials provided with the distribution.</a>
+<a name="ln17"> *</a>
+<a name="ln18"> * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND</a>
+<a name="ln19"> * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE</a>
+<a name="ln20"> * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE</a>
+<a name="ln21"> * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR</a>
+<a name="ln22"> * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL</a>
+<a name="ln23"> * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS</a>
+<a name="ln24"> * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)</a>
+<a name="ln25"> * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT</a>
+<a name="ln26"> * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY</a>
+<a name="ln27"> * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF</a>
+<a name="ln28"> * SUCH DAMAGE.</a>
+<a name="ln29"> */</a>
+<a name="ln30">/*</a>
+<a name="ln31"> * softmagic - interpret variable magic from MAGIC</a>
+<a name="ln32"> */</a>
+<a name="ln33"> </a>
+<a name="ln34">#include &quot;file.h&quot;</a>
+<a name="ln35"> </a>
+<a name="ln36">#ifndef	lint</a>
+<a name="ln37">FILE_RCSID(&quot;@(#)$File: softmagic.c,v 1.248 2017/04/21 16:54:57 christos Exp $&quot;)</a>
+<a name="ln38">#endif	/* lint */</a>
+<a name="ln39"> </a>
+<a name="ln40">#include &quot;magic.h&quot;</a>
+<a name="ln41">#include &lt;assert.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43">#include &lt;ctype.h&gt;</a>
+<a name="ln44">#include &lt;stdlib.h&gt;</a>
+<a name="ln45">#include &lt;time.h&gt;</a>
+<a name="ln46">#include &quot;der.h&quot;</a>
+<a name="ln47"> </a>
+<a name="ln48">private int match(struct magic_set *, struct magic *, uint32_t,</a>
+<a name="ln49">    const unsigned char *, size_t, size_t, int, int, int, uint16_t *,</a>
+<a name="ln50">    uint16_t *, int *, int *, int *);</a>
+<a name="ln51">private int mget(struct magic_set *, const unsigned char *,</a>
+<a name="ln52">    struct magic *, size_t, size_t, unsigned int, int, int, int, uint16_t *,</a>
+<a name="ln53">    uint16_t *, int *, int *, int *);</a>
+<a name="ln54">private int magiccheck(struct magic_set *, struct magic *);</a>
+<a name="ln55">private int32_t mprint(struct magic_set *, struct magic *);</a>
+<a name="ln56">private int moffset(struct magic_set *, struct magic *, size_t, int32_t *);</a>
+<a name="ln57">private void mdebug(uint32_t, const char *, size_t);</a>
+<a name="ln58">private int mcopy(struct magic_set *, union VALUETYPE *, int, int,</a>
+<a name="ln59">    const unsigned char *, uint32_t, size_t, struct magic *);</a>
+<a name="ln60">private int mconvert(struct magic_set *, struct magic *, int);</a>
+<a name="ln61">private int print_sep(struct magic_set *, int);</a>
+<a name="ln62">private int handle_annotation(struct magic_set *, struct magic *, int);</a>
+<a name="ln63">private int cvt_8(union VALUETYPE *, const struct magic *);</a>
+<a name="ln64">private int cvt_16(union VALUETYPE *, const struct magic *);</a>
+<a name="ln65">private int cvt_32(union VALUETYPE *, const struct magic *);</a>
+<a name="ln66">private int cvt_64(union VALUETYPE *, const struct magic *);</a>
+<a name="ln67"> </a>
+<a name="ln68">#define OFFSET_OOB(n, o, i)	((n) &lt; (uint32_t)(o) || (i) &gt; ((n) - (o)))</a>
+<a name="ln69">#define BE64(p) (((uint64_t)(p)-&gt;hq[0]&lt;&lt;56)|((uint64_t)(p)-&gt;hq[1]&lt;&lt;48)| \</a>
+<a name="ln70">    ((uint64_t)(p)-&gt;hq[2]&lt;&lt;40)|((uint64_t)(p)-&gt;hq[3]&lt;&lt;32)| \</a>
+<a name="ln71">    ((uint64_t)(p)-&gt;hq[4]&lt;&lt;24)|((uint64_t)(p)-&gt;hq[5]&lt;&lt;16)| \</a>
+<a name="ln72">    ((uint64_t)(p)-&gt;hq[6]&lt;&lt;8)|((uint64_t)(p)-&gt;hq[7]))</a>
+<a name="ln73">#define LE64(p) (((uint64_t)(p)-&gt;hq[7]&lt;&lt;56)|((uint64_t)(p)-&gt;hq[6]&lt;&lt;48)| \</a>
+<a name="ln74">    ((uint64_t)(p)-&gt;hq[5]&lt;&lt;40)|((uint64_t)(p)-&gt;hq[4]&lt;&lt;32)| \</a>
+<a name="ln75">    ((uint64_t)(p)-&gt;hq[3]&lt;&lt;24)|((uint64_t)(p)-&gt;hq[2]&lt;&lt;16)| \</a>
+<a name="ln76">    ((uint64_t)(p)-&gt;hq[1]&lt;&lt;8)|((uint64_t)(p)-&gt;hq[0]))</a>
+<a name="ln77">#define LE32(p) (((uint32_t)(p)-&gt;hl[3]&lt;&lt;24)|((uint32_t)(p)-&gt;hl[2]&lt;&lt;16)| \</a>
+<a name="ln78">     ((uint32_t)(p)-&gt;hl[1]&lt;&lt;8)|((uint32_t)(p)-&gt;hl[0]))</a>
+<a name="ln79">#define BE32(p) (((uint32_t)(p)-&gt;hl[0]&lt;&lt;24)|((uint32_t)(p)-&gt;hl[1]&lt;&lt;16)| \</a>
+<a name="ln80">     ((uint32_t)(p)-&gt;hl[2]&lt;&lt;8)|((uint32_t)(p)-&gt;hl[3]))</a>
+<a name="ln81">#define ME32(p) (((uint32_t)(p)-&gt;hl[1]&lt;&lt;24)|((uint32_t)(p)-&gt;hl[0]&lt;&lt;16)| \</a>
+<a name="ln82">     ((uint32_t)(p)-&gt;hl[3]&lt;&lt;8)|((uint32_t)(p)-&gt;hl[2]))</a>
+<a name="ln83">#define BE16(p) (((uint16_t)(p)-&gt;hs[0]&lt;&lt;8)|((uint16_t)(p)-&gt;hs[1]))</a>
+<a name="ln84">#define LE16(p) (((uint16_t)(p)-&gt;hs[1]&lt;&lt;8)|((uint16_t)(p)-&gt;hs[0]))</a>
+<a name="ln85">#define SEXT(s,v,p) ((s)?(intmax_t)(int##v##_t)(p):(intmax_t)(uint##v##_t)(p))</a>
+<a name="ln86"> </a>
+<a name="ln87">/*</a>
+<a name="ln88"> * softmagic - lookup one file in parsed, in-memory copy of database</a>
+<a name="ln89"> * Passed the name and FILE * of one file to be typed.</a>
+<a name="ln90"> */</a>
+<a name="ln91">/*ARGSUSED1*/		/* nbytes passed for regularity, maybe need later */</a>
+<a name="ln92">protected int</a>
+<a name="ln93">file_softmagic(struct magic_set *ms, const unsigned char *buf, size_t nbytes,</a>
+<a name="ln94">    uint16_t *indir_count, uint16_t *name_count, int mode, int text)</a>
+<a name="ln95">{</a>
+<a name="ln96">	struct mlist *ml;</a>
+<a name="ln97">	int rv, printed_something = 0, need_separator = 0;</a>
+<a name="ln98">	uint16_t nc, ic;</a>
+<a name="ln99"> </a>
+<a name="ln100">	if (name_count == NULL) {</a>
+<a name="ln101">		nc = 0;</a>
+<a name="ln102">		name_count = &amp;nc;</a>
+<a name="ln103">	}</a>
+<a name="ln104">	if (indir_count == NULL) {</a>
+<a name="ln105">		ic = 0;</a>
+<a name="ln106">		indir_count = &amp;ic;</a>
+<a name="ln107">	}</a>
+<a name="ln108"> </a>
+<a name="ln109">	for (ml = ms-&gt;mlist[0]-&gt;next; ml != ms-&gt;mlist[0]; ml = ml-&gt;next)</a>
+<a name="ln110">		if ((rv = match(ms, ml-&gt;magic, ml-&gt;nmagic, buf, nbytes, 0, mode,</a>
+<a name="ln111">		    text, 0, indir_count, name_count,</a>
+<a name="ln112">		    &amp;printed_something, &amp;need_separator, NULL)) != 0)</a>
+<a name="ln113">			return rv;</a>
+<a name="ln114"> </a>
+<a name="ln115">	return 0;</a>
+<a name="ln116">}</a>
+<a name="ln117"> </a>
+<a name="ln118">#define FILE_FMTDEBUG</a>
+<a name="ln119">#ifdef FILE_FMTDEBUG</a>
+<a name="ln120">#define F(a, b, c) file_fmtcheck((a), (b), (c), __FILE__, __LINE__)</a>
+<a name="ln121"> </a>
+<a name="ln122">private const char * __attribute__((__format_arg__(3)))</a>
+<a name="ln123">file_fmtcheck(struct magic_set *ms, const struct magic *m, const char *def,</a>
+<a name="ln124">	const char *file, size_t line)</a>
+<a name="ln125">{</a>
+<a name="ln126">	const char *ptr = fmtcheck(m-&gt;desc, def);</a>
+<a name="ln127">	if (ptr == def)</a>
+<a name="ln128">		file_magerror(ms,</a>
+<a name="ln129">		    &quot;%s, %&quot; SIZE_T_FORMAT &quot;u: format `%s' does not match&quot;</a>
+<a name="ln130">		    &quot; with `%s'&quot;, file, line, m-&gt;desc, def);</a>
+<a name="ln131">	return ptr;</a>
+<a name="ln132">}</a>
+<a name="ln133">#else</a>
+<a name="ln134">#define F(a, b, c) fmtcheck((b)-&gt;desc, (c))</a>
+<a name="ln135">#endif</a>
+<a name="ln136"> </a>
+<a name="ln137">/*</a>
+<a name="ln138"> * Go through the whole list, stopping if you find a match.  Process all</a>
+<a name="ln139"> * the continuations of that match before returning.</a>
+<a name="ln140"> *</a>
+<a name="ln141"> * We support multi-level continuations:</a>
+<a name="ln142"> *</a>
+<a name="ln143"> *	At any time when processing a successful top-level match, there is a</a>
+<a name="ln144"> *	current continuation level; it represents the level of the last</a>
+<a name="ln145"> *	successfully matched continuation.</a>
+<a name="ln146"> *</a>
+<a name="ln147"> *	Continuations above that level are skipped as, if we see one, it</a>
+<a name="ln148"> *	means that the continuation that controls them - i.e, the</a>
+<a name="ln149"> *	lower-level continuation preceding them - failed to match.</a>
+<a name="ln150"> *</a>
+<a name="ln151"> *	Continuations below that level are processed as, if we see one,</a>
+<a name="ln152"> *	it means we've finished processing or skipping higher-level</a>
+<a name="ln153"> *	continuations under the control of a successful or unsuccessful</a>
+<a name="ln154"> *	lower-level continuation, and are now seeing the next lower-level</a>
+<a name="ln155"> *	continuation and should process it.  The current continuation</a>
+<a name="ln156"> *	level reverts to the level of the one we're seeing.</a>
+<a name="ln157"> *</a>
+<a name="ln158"> *	Continuations at the current level are processed as, if we see</a>
+<a name="ln159"> *	one, there's no lower-level continuation that may have failed.</a>
+<a name="ln160"> *</a>
+<a name="ln161"> *	If a continuation matches, we bump the current continuation level</a>
+<a name="ln162"> *	so that higher-level continuations are processed.</a>
+<a name="ln163"> */</a>
+<a name="ln164">private int</a>
+<a name="ln165">match(struct magic_set *ms, struct magic *magic, uint32_t nmagic,</a>
+<a name="ln166">    const unsigned char *s, size_t nbytes, size_t offset, int mode, int text,</a>
+<a name="ln167">    int flip, uint16_t *indir_count, uint16_t *name_count,</a>
+<a name="ln168">    int *printed_something, int *need_separator, int *returnval)</a>
+<a name="ln169">{</a>
+<a name="ln170">	uint32_t magindex = 0;</a>
+<a name="ln171">	unsigned int cont_level = 0;</a>
+<a name="ln172">	int returnvalv = 0, e; /* if a match is found it is set to 1*/</a>
+<a name="ln173">	int firstline = 1; /* a flag to print X\n  X\n- X */</a>
+<a name="ln174">	int print = (ms-&gt;flags &amp; MAGIC_NODESC) == 0;</a>
+<a name="ln175"> </a>
+<a name="ln176">	if (returnval == NULL)</a>
+<a name="ln177">		returnval = &amp;returnvalv;</a>
+<a name="ln178"> </a>
+<a name="ln179">	if (file_check_mem(ms, cont_level) == -1)</a>
+<a name="ln180">		return -1;</a>
+<a name="ln181"> </a>
+<a name="ln182">	for (magindex = 0; magindex &lt; nmagic; magindex++) {</a>
+<a name="ln183">		int flush = 0;</a>
+<a name="ln184">		struct magic *m = &amp;magic[magindex];</a>
+<a name="ln185"> </a>
+<a name="ln186">		if (m-&gt;type != FILE_NAME)</a>
+<a name="ln187">		if ((IS_STRING(m-&gt;type) &amp;&amp;</a>
+<a name="ln188">#define FLT (STRING_BINTEST | STRING_TEXTTEST)</a>
+<a name="ln189">		     ((text &amp;&amp; (m-&gt;str_flags &amp; FLT) == STRING_BINTEST) ||</a>
+<a name="ln190">		      (!text &amp;&amp; (m-&gt;str_flags &amp; FLT) == STRING_TEXTTEST))) ||</a>
+<a name="ln191">		    (m-&gt;flag &amp; mode) != mode) {</a>
+<a name="ln192">flush:</a>
+<a name="ln193">			/* Skip sub-tests */</a>
+<a name="ln194">			while (magindex &lt; nmagic - 1 &amp;&amp;</a>
+<a name="ln195">			    magic[magindex + 1].cont_level != 0)</a>
+<a name="ln196">				magindex++;</a>
+<a name="ln197">			cont_level = 0;</a>
+<a name="ln198">			continue; /* Skip to next top-level test*/</a>
+<a name="ln199">		}</a>
+<a name="ln200"> </a>
+<a name="ln201">		ms-&gt;offset = m-&gt;offset;</a>
+<a name="ln202">		ms-&gt;line = m-&gt;lineno;</a>
+<a name="ln203"> </a>
+<a name="ln204">		/* if main entry matches, print it... */</a>
+<a name="ln205">		switch (mget(ms, s, m, nbytes, offset, cont_level, mode, text,</a>
+<a name="ln206">		    flip, indir_count, name_count,</a>
+<a name="ln207">		    printed_something, need_separator, returnval)) {</a>
+<a name="ln208">		case -1:</a>
+<a name="ln209">			return -1;</a>
+<a name="ln210">		case 0:</a>
+<a name="ln211">			flush = m-&gt;reln != '!';</a>
+<a name="ln212">			break;</a>
+<a name="ln213">		default:</a>
+<a name="ln214">			if (m-&gt;type == FILE_INDIRECT)</a>
+<a name="ln215">				*returnval = 1;</a>
+<a name="ln216"> </a>
+<a name="ln217">			switch (magiccheck(ms, m)) {</a>
+<a name="ln218">			case -1:</a>
+<a name="ln219">				return -1;</a>
+<a name="ln220">			case 0:</a>
+<a name="ln221">				flush++;</a>
+<a name="ln222">				break;</a>
+<a name="ln223">			default:</a>
+<a name="ln224">				flush = 0;</a>
+<a name="ln225">				break;</a>
+<a name="ln226">			}</a>
+<a name="ln227">			break;</a>
+<a name="ln228">		}</a>
+<a name="ln229">		if (flush) {</a>
+<a name="ln230">			/*</a>
+<a name="ln231">			 * main entry didn't match,</a>
+<a name="ln232">			 * flush its continuations</a>
+<a name="ln233">			 */</a>
+<a name="ln234">			goto flush;</a>
+<a name="ln235">		}</a>
+<a name="ln236"> </a>
+<a name="ln237">		if ((e = handle_annotation(ms, m, firstline)) != 0) {</a>
+<a name="ln238">			*need_separator = 1;</a>
+<a name="ln239">			*printed_something = 1;</a>
+<a name="ln240">			*returnval = 1;</a>
+<a name="ln241">			return e;</a>
+<a name="ln242">		}</a>
+<a name="ln243"> </a>
+<a name="ln244">		/*</a>
+<a name="ln245">		 * If we are going to print something, we'll need to print</a>
+<a name="ln246">		 * a blank before we print something else.</a>
+<a name="ln247">		 */</a>
+<a name="ln248">		if (*m-&gt;desc) {</a>
+<a name="ln249">			*need_separator = 1;</a>
+<a name="ln250">			*printed_something = 1;</a>
+<a name="ln251">			if (print_sep(ms, firstline) == -1)</a>
+<a name="ln252">				return -1;</a>
+<a name="ln253">		}</a>
+<a name="ln254"> </a>
+<a name="ln255"> </a>
+<a name="ln256">		if (print &amp;&amp; mprint(ms, m) == -1)</a>
+<a name="ln257">			return -1;</a>
+<a name="ln258"> </a>
+<a name="ln259">		switch (moffset(ms, m, nbytes, &amp;ms-&gt;c.li[cont_level].off)) {</a>
+<a name="ln260">		case -1:</a>
+<a name="ln261">		case 0:</a>
+<a name="ln262">			goto flush;</a>
+<a name="ln263">		default:</a>
+<a name="ln264">			break;</a>
+<a name="ln265">		}</a>
+<a name="ln266"> </a>
+<a name="ln267">		/* and any continuations that match */</a>
+<a name="ln268">		if (file_check_mem(ms, ++cont_level) == -1)</a>
+<a name="ln269">			return -1;</a>
+<a name="ln270"> </a>
+<a name="ln271">		while (magindex + 1 &lt; nmagic &amp;&amp;</a>
+<a name="ln272">		    magic[magindex + 1].cont_level != 0) {</a>
+<a name="ln273">			m = &amp;magic[++magindex];</a>
+<a name="ln274">			ms-&gt;line = m-&gt;lineno; /* for messages */</a>
+<a name="ln275"> </a>
+<a name="ln276">			if (cont_level &lt; m-&gt;cont_level)</a>
+<a name="ln277">				continue;</a>
+<a name="ln278">			if (cont_level &gt; m-&gt;cont_level) {</a>
+<a name="ln279">				/*</a>
+<a name="ln280">				 * We're at the end of the level</a>
+<a name="ln281">				 * &quot;cont_level&quot; continuations.</a>
+<a name="ln282">				 */</a>
+<a name="ln283">				cont_level = m-&gt;cont_level;</a>
+<a name="ln284">			}</a>
+<a name="ln285">			ms-&gt;offset = m-&gt;offset;</a>
+<a name="ln286">			if (m-&gt;flag &amp; OFFADD) {</a>
+<a name="ln287">				ms-&gt;offset +=</a>
+<a name="ln288">				    ms-&gt;c.li[cont_level - 1].off;</a>
+<a name="ln289">			}</a>
+<a name="ln290"> </a>
+<a name="ln291">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln292">			if (m-&gt;cond == COND_ELSE ||</a>
+<a name="ln293">			    m-&gt;cond == COND_ELIF) {</a>
+<a name="ln294">				if (ms-&gt;c.li[cont_level].last_match == 1)</a>
+<a name="ln295">					continue;</a>
+<a name="ln296">			}</a>
+<a name="ln297">#endif</a>
+<a name="ln298">			switch (mget(ms, s, m, nbytes, offset, cont_level, mode,</a>
+<a name="ln299">			    text, flip, indir_count, name_count,</a>
+<a name="ln300">			    printed_something, need_separator, returnval)) {</a>
+<a name="ln301">			case -1:</a>
+<a name="ln302">				return -1;</a>
+<a name="ln303">			case 0:</a>
+<a name="ln304">				if (m-&gt;reln != '!')</a>
+<a name="ln305">					continue;</a>
+<a name="ln306">				flush = 1;</a>
+<a name="ln307">				break;</a>
+<a name="ln308">			default:</a>
+<a name="ln309">				if (m-&gt;type == FILE_INDIRECT)</a>
+<a name="ln310">					*returnval = 1;</a>
+<a name="ln311">				flush = 0;</a>
+<a name="ln312">				break;</a>
+<a name="ln313">			}</a>
+<a name="ln314"> </a>
+<a name="ln315">			switch (flush ? 1 : magiccheck(ms, m)) {</a>
+<a name="ln316">			case -1:</a>
+<a name="ln317">				return -1;</a>
+<a name="ln318">			case 0:</a>
+<a name="ln319">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln320">				ms-&gt;c.li[cont_level].last_match = 0;</a>
+<a name="ln321">#endif</a>
+<a name="ln322">				break;</a>
+<a name="ln323">			default:</a>
+<a name="ln324">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln325">				ms-&gt;c.li[cont_level].last_match = 1;</a>
+<a name="ln326">#endif</a>
+<a name="ln327">				if (m-&gt;type == FILE_CLEAR)</a>
+<a name="ln328">					ms-&gt;c.li[cont_level].got_match = 0;</a>
+<a name="ln329">				else if (ms-&gt;c.li[cont_level].got_match) {</a>
+<a name="ln330">					if (m-&gt;type == FILE_DEFAULT)</a>
+<a name="ln331">						break;</a>
+<a name="ln332">				} else</a>
+<a name="ln333">					ms-&gt;c.li[cont_level].got_match = 1;</a>
+<a name="ln334"> </a>
+<a name="ln335">				if ((e = handle_annotation(ms, m, firstline)) != 0) {</a>
+<a name="ln336">					*need_separator = 1;</a>
+<a name="ln337">					*printed_something = 1;</a>
+<a name="ln338">					*returnval = 1;</a>
+<a name="ln339">					return e;</a>
+<a name="ln340">				}</a>
+<a name="ln341">				/*</a>
+<a name="ln342">				 * If we are going to print something,</a>
+<a name="ln343">				 * make sure that we have a separator first.</a>
+<a name="ln344">				 */</a>
+<a name="ln345">				if (*m-&gt;desc) {</a>
+<a name="ln346">					if (!*printed_something) {</a>
+<a name="ln347">						*printed_something = 1;</a>
+<a name="ln348">						if (print_sep(ms, firstline)</a>
+<a name="ln349">						    == -1)</a>
+<a name="ln350">							return -1;</a>
+<a name="ln351">					}</a>
+<a name="ln352">				}</a>
+<a name="ln353">				/*</a>
+<a name="ln354">				 * This continuation matched.  Print</a>
+<a name="ln355">				 * its message, with a blank before it</a>
+<a name="ln356">				 * if the previous item printed and</a>
+<a name="ln357">				 * this item isn't empty.</a>
+<a name="ln358">				 */</a>
+<a name="ln359">				/* space if previous printed */</a>
+<a name="ln360">				if (*need_separator</a>
+<a name="ln361">				    &amp;&amp; ((m-&gt;flag &amp; NOSPACE) == 0)</a>
+<a name="ln362">				    &amp;&amp; *m-&gt;desc) {</a>
+<a name="ln363">					if (print &amp;&amp;</a>
+<a name="ln364">					    file_printf(ms, &quot; &quot;) == -1)</a>
+<a name="ln365">						return -1;</a>
+<a name="ln366">					*need_separator = 0;</a>
+<a name="ln367">				}</a>
+<a name="ln368">				if (print &amp;&amp; mprint(ms, m) == -1)</a>
+<a name="ln369">					return -1;</a>
+<a name="ln370"> </a>
+<a name="ln371">				switch (moffset(ms, m, nbytes,</a>
+<a name="ln372">				    &amp;ms-&gt;c.li[cont_level].off)) {</a>
+<a name="ln373">				case -1:</a>
+<a name="ln374">				case 0:</a>
+<a name="ln375">					flush = 1;</a>
+<a name="ln376">					cont_level--;</a>
+<a name="ln377">					break;</a>
+<a name="ln378">				default:</a>
+<a name="ln379">					break;</a>
+<a name="ln380">				}</a>
+<a name="ln381"> </a>
+<a name="ln382">				if (*m-&gt;desc)</a>
+<a name="ln383">					*need_separator = 1;</a>
+<a name="ln384"> </a>
+<a name="ln385">				/*</a>
+<a name="ln386">				 * If we see any continuations</a>
+<a name="ln387">				 * at a higher level,</a>
+<a name="ln388">				 * process them.</a>
+<a name="ln389">				 */</a>
+<a name="ln390">				if (file_check_mem(ms, ++cont_level) == -1)</a>
+<a name="ln391">					return -1;</a>
+<a name="ln392">				break;</a>
+<a name="ln393">			}</a>
+<a name="ln394">		}</a>
+<a name="ln395">		if (*printed_something) {</a>
+<a name="ln396">			firstline = 0;</a>
+<a name="ln397">			if (print)</a>
+<a name="ln398">				*returnval = 1;</a>
+<a name="ln399">		}</a>
+<a name="ln400">		if ((ms-&gt;flags &amp; MAGIC_CONTINUE) == 0 &amp;&amp; *printed_something) {</a>
+<a name="ln401">			return *returnval; /* don't keep searching */</a>
+<a name="ln402">		}</a>
+<a name="ln403">		cont_level = 0;</a>
+<a name="ln404">	}</a>
+<a name="ln405">	return *returnval;  /* This is hit if -k is set or there is no match */</a>
+<a name="ln406">}</a>
+<a name="ln407"> </a>
+<a name="ln408">private int</a>
+<a name="ln409">check_fmt(struct magic_set *ms, struct magic *m)</a>
+<a name="ln410">{</a>
+<a name="ln411">	file_regex_t rx;</a>
+<a name="ln412">	int rc, rv = -1;</a>
+<a name="ln413"> </a>
+<a name="ln414">	if (strchr(m-&gt;desc, '%') == NULL)</a>
+<a name="ln415">		return 0;</a>
+<a name="ln416"> </a>
+<a name="ln417">	rc = file_regcomp(&amp;rx, &quot;%[-0-9\\.]*s&quot;, REG_EXTENDED|REG_NOSUB);</a>
+<a name="ln418">	if (rc) {</a>
+<a name="ln419">		file_regerror(&amp;rx, rc, ms);</a>
+<a name="ln420">	} else {</a>
+<a name="ln421">		rc = file_regexec(&amp;rx, m-&gt;desc, 0, 0, 0);</a>
+<a name="ln422">		rv = !rc;</a>
+<a name="ln423">	}</a>
+<a name="ln424">	file_regfree(&amp;rx);</a>
+<a name="ln425">	return rv;</a>
+<a name="ln426">}</a>
+<a name="ln427"> </a>
+<a name="ln428">#ifndef HAVE_STRNDUP</a>
+<a name="ln429">char * strndup(const char *, size_t);</a>
+<a name="ln430"> </a>
+<a name="ln431">char *</a>
+<a name="ln432">strndup(const char *str, size_t n)</a>
+<a name="ln433">{</a>
+<a name="ln434">	size_t len;</a>
+<a name="ln435">	char *copy;</a>
+<a name="ln436"> </a>
+<a name="ln437">	for (len = 0; len &lt; n &amp;&amp; str[len]; len++)</a>
+<a name="ln438">		continue;</a>
+<a name="ln439">	if ((copy = malloc(len + 1)) == NULL)</a>
+<a name="ln440">		return NULL;</a>
+<a name="ln441">	(void)memcpy(copy, str, len);</a>
+<a name="ln442">	copy[len] = '\0';</a>
+<a name="ln443">	return copy;</a>
+<a name="ln444">}</a>
+<a name="ln445">#endif /* HAVE_STRNDUP */</a>
+<a name="ln446"> </a>
+<a name="ln447">private int32_t</a>
+<a name="ln448">mprint(struct magic_set *ms, struct magic *m)</a>
+<a name="ln449">{</a>
+<a name="ln450">	uint64_t v;</a>
+<a name="ln451">	float vf;</a>
+<a name="ln452">	double vd;</a>
+<a name="ln453">	int64_t t = 0;</a>
+<a name="ln454"> 	char buf[128], tbuf[26], sbuf[512];</a>
+<a name="ln455">	union VALUETYPE *p = &amp;ms-&gt;ms_value;</a>
+<a name="ln456"> </a>
+<a name="ln457">  	switch (m-&gt;type) {</a>
+<a name="ln458">  	case FILE_BYTE:</a>
+<a name="ln459">		v = file_signextend(ms, m, (uint64_t)p-&gt;b);</a>
+<a name="ln460">		switch (check_fmt(ms, m)) {</a>
+<a name="ln461">		case -1:</a>
+<a name="ln462">			return -1;</a>
+<a name="ln463">		case 1:</a>
+<a name="ln464">			(void)snprintf(buf, sizeof(buf), &quot;%d&quot;,</a>
+<a name="ln465">			    (unsigned char)v);</a>
+<a name="ln466">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln467">				return -1;</a>
+<a name="ln468">			break;</a>
+<a name="ln469">		default:</a>
+<a name="ln470">			if (file_printf(ms, F(ms, m, &quot;%d&quot;),</a>
+<a name="ln471">			    (unsigned char) v) == -1)</a>
+<a name="ln472">				return -1;</a>
+<a name="ln473">			break;</a>
+<a name="ln474">		}</a>
+<a name="ln475">		t = ms-&gt;offset + sizeof(char);</a>
+<a name="ln476">		break;</a>
+<a name="ln477"> </a>
+<a name="ln478">  	case FILE_SHORT:</a>
+<a name="ln479">  	case FILE_BESHORT:</a>
+<a name="ln480">  	case FILE_LESHORT:</a>
+<a name="ln481">		v = file_signextend(ms, m, (uint64_t)p-&gt;h);</a>
+<a name="ln482">		switch (check_fmt(ms, m)) {</a>
+<a name="ln483">		case -1:</a>
+<a name="ln484">			return -1;</a>
+<a name="ln485">		case 1:</a>
+<a name="ln486">			(void)snprintf(buf, sizeof(buf), &quot;%u&quot;,</a>
+<a name="ln487">			    (unsigned short)v);</a>
+<a name="ln488">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln489">				return -1;</a>
+<a name="ln490">			break;</a>
+<a name="ln491">		default:</a>
+<a name="ln492">			if (file_printf(ms, F(ms, m, &quot;%u&quot;),</a>
+<a name="ln493">			    (unsigned short) v) == -1)</a>
+<a name="ln494">				return -1;</a>
+<a name="ln495">			break;</a>
+<a name="ln496">		}</a>
+<a name="ln497">		t = ms-&gt;offset + sizeof(short);</a>
+<a name="ln498">		break;</a>
+<a name="ln499"> </a>
+<a name="ln500">  	case FILE_LONG:</a>
+<a name="ln501">  	case FILE_BELONG:</a>
+<a name="ln502">  	case FILE_LELONG:</a>
+<a name="ln503">  	case FILE_MELONG:</a>
+<a name="ln504">		v = file_signextend(ms, m, (uint64_t)p-&gt;l);</a>
+<a name="ln505">		switch (check_fmt(ms, m)) {</a>
+<a name="ln506">		case -1:</a>
+<a name="ln507">			return -1;</a>
+<a name="ln508">		case 1:</a>
+<a name="ln509">			(void)snprintf(buf, sizeof(buf), &quot;%u&quot;, (uint32_t) v);</a>
+<a name="ln510">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln511">				return -1;</a>
+<a name="ln512">			break;</a>
+<a name="ln513">		default:</a>
+<a name="ln514">			if (file_printf(ms, F(ms, m, &quot;%u&quot;), (uint32_t) v) == -1)</a>
+<a name="ln515">				return -1;</a>
+<a name="ln516">			break;</a>
+<a name="ln517">		}</a>
+<a name="ln518">		t = ms-&gt;offset + sizeof(int32_t);</a>
+<a name="ln519">  		break;</a>
+<a name="ln520"> </a>
+<a name="ln521">  	case FILE_QUAD:</a>
+<a name="ln522">  	case FILE_BEQUAD:</a>
+<a name="ln523">  	case FILE_LEQUAD:</a>
+<a name="ln524">		v = file_signextend(ms, m, p-&gt;q);</a>
+<a name="ln525">		switch (check_fmt(ms, m)) {</a>
+<a name="ln526">		case -1:</a>
+<a name="ln527">			return -1;</a>
+<a name="ln528">		case 1:</a>
+<a name="ln529">			(void)snprintf(buf, sizeof(buf), &quot;%&quot; INT64_T_FORMAT &quot;u&quot;,</a>
+<a name="ln530">			    (unsigned long long)v);</a>
+<a name="ln531">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln532">				return -1;</a>
+<a name="ln533">			break;</a>
+<a name="ln534">		default:</a>
+<a name="ln535">			if (file_printf(ms, F(ms, m, &quot;%&quot; INT64_T_FORMAT &quot;u&quot;),</a>
+<a name="ln536">			    (unsigned long long) v) == -1)</a>
+<a name="ln537">				return -1;</a>
+<a name="ln538">			break;</a>
+<a name="ln539">		}</a>
+<a name="ln540">		t = ms-&gt;offset + sizeof(int64_t);</a>
+<a name="ln541">  		break;</a>
+<a name="ln542"> </a>
+<a name="ln543">  	case FILE_STRING:</a>
+<a name="ln544">  	case FILE_PSTRING:</a>
+<a name="ln545">  	case FILE_BESTRING16:</a>
+<a name="ln546">  	case FILE_LESTRING16:</a>
+<a name="ln547">		if (m-&gt;reln == '=' || m-&gt;reln == '!') {</a>
+<a name="ln548">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), </a>
+<a name="ln549">			    file_printable(sbuf, sizeof(sbuf), m-&gt;value.s))</a>
+<a name="ln550">			    == -1)</a>
+<a name="ln551">				return -1;</a>
+<a name="ln552">			t = ms-&gt;offset + m-&gt;vallen;</a>
+<a name="ln553">		}</a>
+<a name="ln554">		else {</a>
+<a name="ln555">			char *str = p-&gt;s;</a>
+<a name="ln556"> </a>
+<a name="ln557">			/* compute t before we mangle the string? */</a>
+<a name="ln558">			t = ms-&gt;offset + strlen(str);</a>
+<a name="ln559"> </a>
+<a name="ln560">			if (*m-&gt;value.s == '\0')</a>
+<a name="ln561">				str[strcspn(str, &quot;\r\n&quot;)] = '\0';</a>
+<a name="ln562"> </a>
+<a name="ln563">			if (m-&gt;str_flags &amp; STRING_TRIM) {</a>
+<a name="ln564">				char *last;</a>
+<a name="ln565">				while (isspace((unsigned char)*str))</a>
+<a name="ln566">					str++;</a>
+<a name="ln567">				last = str;</a>
+<a name="ln568">				while (*last)</a>
+<a name="ln569">					last++;</a>
+<a name="ln570">				--last;</a>
+<a name="ln571">				while (isspace((unsigned char)*last))</a>
+<a name="ln572">					last--;</a>
+<a name="ln573">				*++last = '\0';</a>
+<a name="ln574">			}</a>
+<a name="ln575"> </a>
+<a name="ln576">			if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln577">			    file_printable(sbuf, sizeof(sbuf), str)) == -1)</a>
+<a name="ln578">				return -1;</a>
+<a name="ln579"> </a>
+<a name="ln580">			if (m-&gt;type == FILE_PSTRING)</a>
+<a name="ln581">				t += file_pstring_length_size(m);</a>
+<a name="ln582">		}</a>
+<a name="ln583">		break;</a>
+<a name="ln584"> </a>
+<a name="ln585">	case FILE_DATE:</a>
+<a name="ln586">	case FILE_BEDATE:</a>
+<a name="ln587">	case FILE_LEDATE:</a>
+<a name="ln588">	case FILE_MEDATE:</a>
+<a name="ln589">		if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln590">		    file_fmttime(p-&gt;l, 0, tbuf)) == -1)</a>
+<a name="ln591">			return -1;</a>
+<a name="ln592">		t = ms-&gt;offset + sizeof(uint32_t);</a>
+<a name="ln593">		break;</a>
+<a name="ln594"> </a>
+<a name="ln595">	case FILE_LDATE:</a>
+<a name="ln596">	case FILE_BELDATE:</a>
+<a name="ln597">	case FILE_LELDATE:</a>
+<a name="ln598">	case FILE_MELDATE:</a>
+<a name="ln599">		if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln600">		    file_fmttime(p-&gt;l, FILE_T_LOCAL, tbuf)) == -1)</a>
+<a name="ln601">			return -1;</a>
+<a name="ln602">		t = ms-&gt;offset + sizeof(uint32_t);</a>
+<a name="ln603">		break;</a>
+<a name="ln604"> </a>
+<a name="ln605">	case FILE_QDATE:</a>
+<a name="ln606">	case FILE_BEQDATE:</a>
+<a name="ln607">	case FILE_LEQDATE:</a>
+<a name="ln608">		if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln609">		    file_fmttime(p-&gt;q, 0, tbuf)) == -1)</a>
+<a name="ln610">			return -1;</a>
+<a name="ln611">		t = ms-&gt;offset + sizeof(uint64_t);</a>
+<a name="ln612">		break;</a>
+<a name="ln613"> </a>
+<a name="ln614">	case FILE_QLDATE:</a>
+<a name="ln615">	case FILE_BEQLDATE:</a>
+<a name="ln616">	case FILE_LEQLDATE:</a>
+<a name="ln617">		if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln618">		    file_fmttime(p-&gt;q, FILE_T_LOCAL, tbuf)) == -1)</a>
+<a name="ln619">			return -1;</a>
+<a name="ln620">		t = ms-&gt;offset + sizeof(uint64_t);</a>
+<a name="ln621">		break;</a>
+<a name="ln622"> </a>
+<a name="ln623">	case FILE_QWDATE:</a>
+<a name="ln624">	case FILE_BEQWDATE:</a>
+<a name="ln625">	case FILE_LEQWDATE:</a>
+<a name="ln626">		if (file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln627">		    file_fmttime(p-&gt;q, FILE_T_WINDOWS, tbuf)) == -1)</a>
+<a name="ln628">			return -1;</a>
+<a name="ln629">		t = ms-&gt;offset + sizeof(uint64_t);</a>
+<a name="ln630">		break;</a>
+<a name="ln631"> </a>
+<a name="ln632">	case FILE_FLOAT:</a>
+<a name="ln633">	case FILE_BEFLOAT:</a>
+<a name="ln634">	case FILE_LEFLOAT:</a>
+<a name="ln635">		vf = p-&gt;f;</a>
+<a name="ln636">		switch (check_fmt(ms, m)) {</a>
+<a name="ln637">		case -1:</a>
+<a name="ln638">			return -1;</a>
+<a name="ln639">		case 1:</a>
+<a name="ln640">			(void)snprintf(buf, sizeof(buf), &quot;%g&quot;, vf);</a>
+<a name="ln641">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln642">				return -1;</a>
+<a name="ln643">			break;</a>
+<a name="ln644">		default:</a>
+<a name="ln645">			if (file_printf(ms, F(ms, m, &quot;%g&quot;), vf) == -1)</a>
+<a name="ln646">				return -1;</a>
+<a name="ln647">			break;</a>
+<a name="ln648">		}</a>
+<a name="ln649">		t = ms-&gt;offset + sizeof(float);</a>
+<a name="ln650">  		break;</a>
+<a name="ln651"> </a>
+<a name="ln652">	case FILE_DOUBLE:</a>
+<a name="ln653">	case FILE_BEDOUBLE:</a>
+<a name="ln654">	case FILE_LEDOUBLE:</a>
+<a name="ln655">		vd = p-&gt;d;</a>
+<a name="ln656">		switch (check_fmt(ms, m)) {</a>
+<a name="ln657">		case -1:</a>
+<a name="ln658">			return -1;</a>
+<a name="ln659">		case 1:</a>
+<a name="ln660">			(void)snprintf(buf, sizeof(buf), &quot;%g&quot;, vd);</a>
+<a name="ln661">			if (file_printf(ms, F(ms, m, &quot;%s&quot;), buf) == -1)</a>
+<a name="ln662">				return -1;</a>
+<a name="ln663">			break;</a>
+<a name="ln664">		default:</a>
+<a name="ln665">			if (file_printf(ms, F(ms, m, &quot;%g&quot;), vd) == -1)</a>
+<a name="ln666">				return -1;</a>
+<a name="ln667">			break;</a>
+<a name="ln668">		}</a>
+<a name="ln669">		t = ms-&gt;offset + sizeof(double);</a>
+<a name="ln670">  		break;</a>
+<a name="ln671"> </a>
+<a name="ln672">	case FILE_SEARCH:</a>
+<a name="ln673">	case FILE_REGEX: {</a>
+<a name="ln674">		char *cp;</a>
+<a name="ln675">		int rval;</a>
+<a name="ln676"> </a>
+<a name="ln677">		cp = strndup((const char *)ms-&gt;search.s, ms-&gt;search.rm_len);</a>
+<a name="ln678">		if (cp == NULL) {</a>
+<a name="ln679">			file_oomem(ms, ms-&gt;search.rm_len);</a>
+<a name="ln680">			return -1;</a>
+<a name="ln681">		}</a>
+<a name="ln682">		rval = file_printf(ms, F(ms, m, &quot;%s&quot;),</a>
+<a name="ln683">		    file_printable(sbuf, sizeof(sbuf), cp));</a>
+<a name="ln684">		free(cp);</a>
+<a name="ln685"> </a>
+<a name="ln686">		if (rval == -1)</a>
+<a name="ln687">			return -1;</a>
+<a name="ln688"> </a>
+<a name="ln689">		if ((m-&gt;str_flags &amp; REGEX_OFFSET_START))</a>
+<a name="ln690">			t = ms-&gt;search.offset;</a>
+<a name="ln691">		else</a>
+<a name="ln692">			t = ms-&gt;search.offset + ms-&gt;search.rm_len;</a>
+<a name="ln693">		break;</a>
+<a name="ln694">	}</a>
+<a name="ln695"> </a>
+<a name="ln696">	case FILE_DEFAULT:</a>
+<a name="ln697">	case FILE_CLEAR:</a>
+<a name="ln698">	  	if (file_printf(ms, &quot;%s&quot;, m-&gt;desc) == -1)</a>
+<a name="ln699">			return -1;</a>
+<a name="ln700">		t = ms-&gt;offset;</a>
+<a name="ln701">		break;</a>
+<a name="ln702"> </a>
+<a name="ln703">	case FILE_INDIRECT:</a>
+<a name="ln704">	case FILE_USE:</a>
+<a name="ln705">	case FILE_NAME:</a>
+<a name="ln706">		t = ms-&gt;offset;</a>
+<a name="ln707">		break;</a>
+<a name="ln708">	case FILE_DER:</a>
+<a name="ln709">		if (file_printf(ms, F(ms, m, &quot;%s&quot;), </a>
+<a name="ln710">		    file_printable(sbuf, sizeof(sbuf), ms-&gt;ms_value.s)) == -1)</a>
+<a name="ln711">			return -1;</a>
+<a name="ln712">		t = ms-&gt;offset;</a>
+<a name="ln713">		break;</a>
+<a name="ln714">	default:</a>
+<a name="ln715">		file_magerror(ms, &quot;invalid m-&gt;type (%d) in mprint()&quot;, m-&gt;type);</a>
+<a name="ln716">		return -1;</a>
+<a name="ln717">	}</a>
+<a name="ln718">	return (int32_t)t;</a>
+<a name="ln719">}</a>
+<a name="ln720"> </a>
+<a name="ln721">private int</a>
+<a name="ln722">moffset(struct magic_set *ms, struct magic *m, size_t nbytes, int32_t *op)</a>
+<a name="ln723">{</a>
+<a name="ln724">	int32_t o;</a>
+<a name="ln725"> </a>
+<a name="ln726">  	switch (m-&gt;type) {</a>
+<a name="ln727">  	case FILE_BYTE:</a>
+<a name="ln728">		o = CAST(int32_t, (ms-&gt;offset + sizeof(char)));</a>
+<a name="ln729">		break;</a>
+<a name="ln730"> </a>
+<a name="ln731">  	case FILE_SHORT:</a>
+<a name="ln732">  	case FILE_BESHORT:</a>
+<a name="ln733">  	case FILE_LESHORT:</a>
+<a name="ln734">		o = CAST(int32_t, (ms-&gt;offset + sizeof(short)));</a>
+<a name="ln735">		break;</a>
+<a name="ln736"> </a>
+<a name="ln737">  	case FILE_LONG:</a>
+<a name="ln738">  	case FILE_BELONG:</a>
+<a name="ln739">  	case FILE_LELONG:</a>
+<a name="ln740">  	case FILE_MELONG:</a>
+<a name="ln741">		o = CAST(int32_t, (ms-&gt;offset + sizeof(int32_t)));</a>
+<a name="ln742">		break;</a>
+<a name="ln743"> </a>
+<a name="ln744">  	case FILE_QUAD:</a>
+<a name="ln745">  	case FILE_BEQUAD:</a>
+<a name="ln746">  	case FILE_LEQUAD:</a>
+<a name="ln747">		o = CAST(int32_t, (ms-&gt;offset + sizeof(int64_t)));</a>
+<a name="ln748">		break;</a>
+<a name="ln749"> </a>
+<a name="ln750">  	case FILE_STRING:</a>
+<a name="ln751">  	case FILE_PSTRING:</a>
+<a name="ln752">  	case FILE_BESTRING16:</a>
+<a name="ln753">  	case FILE_LESTRING16:</a>
+<a name="ln754">		if (m-&gt;reln == '=' || m-&gt;reln == '!') {</a>
+<a name="ln755">			o = ms-&gt;offset + m-&gt;vallen;</a>
+<a name="ln756">		} else {</a>
+<a name="ln757">			union VALUETYPE *p = &amp;ms-&gt;ms_value;</a>
+<a name="ln758"> </a>
+<a name="ln759">			if (*m-&gt;value.s == '\0')</a>
+<a name="ln760">				p-&gt;s[strcspn(p-&gt;s, &quot;\r\n&quot;)] = '\0';</a>
+<a name="ln761">			o = CAST(uint32_t, (ms-&gt;offset + strlen(p-&gt;s)));</a>
+<a name="ln762">			if (m-&gt;type == FILE_PSTRING)</a>
+<a name="ln763">				o += (uint32_t)file_pstring_length_size(m);</a>
+<a name="ln764">		}</a>
+<a name="ln765">		break;</a>
+<a name="ln766"> </a>
+<a name="ln767">	case FILE_DATE:</a>
+<a name="ln768">	case FILE_BEDATE:</a>
+<a name="ln769">	case FILE_LEDATE:</a>
+<a name="ln770">	case FILE_MEDATE:</a>
+<a name="ln771">		o = CAST(int32_t, (ms-&gt;offset + sizeof(uint32_t)));</a>
+<a name="ln772">		break;</a>
+<a name="ln773"> </a>
+<a name="ln774">	case FILE_LDATE:</a>
+<a name="ln775">	case FILE_BELDATE:</a>
+<a name="ln776">	case FILE_LELDATE:</a>
+<a name="ln777">	case FILE_MELDATE:</a>
+<a name="ln778">		o = CAST(int32_t, (ms-&gt;offset + sizeof(uint32_t)));</a>
+<a name="ln779">		break;</a>
+<a name="ln780"> </a>
+<a name="ln781">	case FILE_QDATE:</a>
+<a name="ln782">	case FILE_BEQDATE:</a>
+<a name="ln783">	case FILE_LEQDATE:</a>
+<a name="ln784">		o = CAST(int32_t, (ms-&gt;offset + sizeof(uint64_t)));</a>
+<a name="ln785">		break;</a>
+<a name="ln786"> </a>
+<a name="ln787">	case FILE_QLDATE:</a>
+<a name="ln788">	case FILE_BEQLDATE:</a>
+<a name="ln789">	case FILE_LEQLDATE:</a>
+<a name="ln790">		o = CAST(int32_t, (ms-&gt;offset + sizeof(uint64_t)));</a>
+<a name="ln791">		break;</a>
+<a name="ln792"> </a>
+<a name="ln793">  	case FILE_FLOAT:</a>
+<a name="ln794">  	case FILE_BEFLOAT:</a>
+<a name="ln795">  	case FILE_LEFLOAT:</a>
+<a name="ln796">		o = CAST(int32_t, (ms-&gt;offset + sizeof(float)));</a>
+<a name="ln797">		break;</a>
+<a name="ln798"> </a>
+<a name="ln799">  	case FILE_DOUBLE:</a>
+<a name="ln800">  	case FILE_BEDOUBLE:</a>
+<a name="ln801">  	case FILE_LEDOUBLE:</a>
+<a name="ln802">		o = CAST(int32_t, (ms-&gt;offset + sizeof(double)));</a>
+<a name="ln803">		break;</a>
+<a name="ln804"> </a>
+<a name="ln805">	case FILE_REGEX:</a>
+<a name="ln806">		if ((m-&gt;str_flags &amp; REGEX_OFFSET_START) != 0)</a>
+<a name="ln807">			o = CAST(int32_t, ms-&gt;search.offset);</a>
+<a name="ln808">		else</a>
+<a name="ln809">			o = CAST(int32_t,</a>
+<a name="ln810">			    (ms-&gt;search.offset + ms-&gt;search.rm_len));</a>
+<a name="ln811">		break;</a>
+<a name="ln812"> </a>
+<a name="ln813">	case FILE_SEARCH:</a>
+<a name="ln814">		if ((m-&gt;str_flags &amp; REGEX_OFFSET_START) != 0)</a>
+<a name="ln815">			o = CAST(int32_t, ms-&gt;search.offset);</a>
+<a name="ln816">		else</a>
+<a name="ln817">			o = CAST(int32_t, (ms-&gt;search.offset + m-&gt;vallen));</a>
+<a name="ln818">		break;</a>
+<a name="ln819"> </a>
+<a name="ln820">	case FILE_CLEAR:</a>
+<a name="ln821">	case FILE_DEFAULT:</a>
+<a name="ln822">	case FILE_INDIRECT:</a>
+<a name="ln823">		o = ms-&gt;offset;</a>
+<a name="ln824">		break;</a>
+<a name="ln825"> </a>
+<a name="ln826">	case FILE_DER:</a>
+<a name="ln827">		{</a>
+<a name="ln828">			o = der_offs(ms, m, nbytes);</a>
+<a name="ln829">			if (o == -1 || (size_t)o &gt; nbytes) {</a>
+<a name="ln830">				if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0) {</a>
+<a name="ln831">					(void)fprintf(stderr,</a>
+<a name="ln832">					    &quot;Bad DER offset %d nbytes=%zu&quot;,</a>
+<a name="ln833">					    o, nbytes);</a>
+<a name="ln834">				}</a>
+<a name="ln835">				*op = 0;</a>
+<a name="ln836">				return 0;</a>
+<a name="ln837">			}</a>
+<a name="ln838">			break;</a>
+<a name="ln839">		}</a>
+<a name="ln840"> </a>
+<a name="ln841">	default:</a>
+<a name="ln842">		o = 0;</a>
+<a name="ln843">		break;</a>
+<a name="ln844">	}</a>
+<a name="ln845"> </a>
+<a name="ln846">	if ((size_t)o &gt; nbytes) {</a>
+<a name="ln847">#if 0</a>
+<a name="ln848">		file_error(ms, 0, &quot;Offset out of range %zu &gt; %zu&quot;,</a>
+<a name="ln849">		    (size_t)o, nbytes);</a>
+<a name="ln850">#endif</a>
+<a name="ln851">		return -1;</a>
+<a name="ln852">	}</a>
+<a name="ln853">	*op = o;</a>
+<a name="ln854">	return 1;</a>
+<a name="ln855">}</a>
+<a name="ln856"> </a>
+<a name="ln857">private uint32_t</a>
+<a name="ln858">cvt_id3(struct magic_set *ms, uint32_t v)</a>
+<a name="ln859">{</a>
+<a name="ln860">	v = ((((v &gt;&gt;  0) &amp; 0x7f) &lt;&lt;  0) |</a>
+<a name="ln861">	     (((v &gt;&gt;  8) &amp; 0x7f) &lt;&lt;  7) |</a>
+<a name="ln862">	     (((v &gt;&gt; 16) &amp; 0x7f) &lt;&lt; 14) |</a>
+<a name="ln863">	     (((v &gt;&gt; 24) &amp; 0x7f) &lt;&lt; 21));</a>
+<a name="ln864">	if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln865">		fprintf(stderr, &quot;id3 offs=%u\n&quot;, v);</a>
+<a name="ln866">	return v;</a>
+<a name="ln867">}</a>
+<a name="ln868"> </a>
+<a name="ln869">private int</a>
+<a name="ln870">cvt_flip(int type, int flip)</a>
+<a name="ln871">{</a>
+<a name="ln872">	if (flip == 0)</a>
+<a name="ln873">		return type;</a>
+<a name="ln874">	switch (type) {</a>
+<a name="ln875">	case FILE_BESHORT:</a>
+<a name="ln876">		return FILE_LESHORT;</a>
+<a name="ln877">	case FILE_BELONG:</a>
+<a name="ln878">		return FILE_LELONG;</a>
+<a name="ln879">	case FILE_BEDATE:</a>
+<a name="ln880">		return FILE_LEDATE;</a>
+<a name="ln881">	case FILE_BELDATE:</a>
+<a name="ln882">		return FILE_LELDATE;</a>
+<a name="ln883">	case FILE_BEQUAD:</a>
+<a name="ln884">		return FILE_LEQUAD;</a>
+<a name="ln885">	case FILE_BEQDATE:</a>
+<a name="ln886">		return FILE_LEQDATE;</a>
+<a name="ln887">	case FILE_BEQLDATE:</a>
+<a name="ln888">		return FILE_LEQLDATE;</a>
+<a name="ln889">	case FILE_BEQWDATE:</a>
+<a name="ln890">		return FILE_LEQWDATE;</a>
+<a name="ln891">	case FILE_LESHORT:</a>
+<a name="ln892">		return FILE_BESHORT;</a>
+<a name="ln893">	case FILE_LELONG:</a>
+<a name="ln894">		return FILE_BELONG;</a>
+<a name="ln895">	case FILE_LEDATE:</a>
+<a name="ln896">		return FILE_BEDATE;</a>
+<a name="ln897">	case FILE_LELDATE:</a>
+<a name="ln898">		return FILE_BELDATE;</a>
+<a name="ln899">	case FILE_LEQUAD:</a>
+<a name="ln900">		return FILE_BEQUAD;</a>
+<a name="ln901">	case FILE_LEQDATE:</a>
+<a name="ln902">		return FILE_BEQDATE;</a>
+<a name="ln903">	case FILE_LEQLDATE:</a>
+<a name="ln904">		return FILE_BEQLDATE;</a>
+<a name="ln905">	case FILE_LEQWDATE:</a>
+<a name="ln906">		return FILE_BEQWDATE;</a>
+<a name="ln907">	case FILE_BEFLOAT:</a>
+<a name="ln908">		return FILE_LEFLOAT;</a>
+<a name="ln909">	case FILE_LEFLOAT:</a>
+<a name="ln910">		return FILE_BEFLOAT;</a>
+<a name="ln911">	case FILE_BEDOUBLE:</a>
+<a name="ln912">		return FILE_LEDOUBLE;</a>
+<a name="ln913">	case FILE_LEDOUBLE:</a>
+<a name="ln914">		return FILE_BEDOUBLE;</a>
+<a name="ln915">	default:</a>
+<a name="ln916">		return type;</a>
+<a name="ln917">	}</a>
+<a name="ln918">}</a>
+<a name="ln919">#define DO_CVT(fld, cast) \</a>
+<a name="ln920">	if (m-&gt;num_mask) \</a>
+<a name="ln921">		switch (m-&gt;mask_op &amp; FILE_OPS_MASK) { \</a>
+<a name="ln922">		case FILE_OPAND: \</a>
+<a name="ln923">			p-&gt;fld &amp;= cast m-&gt;num_mask; \</a>
+<a name="ln924">			break; \</a>
+<a name="ln925">		case FILE_OPOR: \</a>
+<a name="ln926">			p-&gt;fld |= cast m-&gt;num_mask; \</a>
+<a name="ln927">			break; \</a>
+<a name="ln928">		case FILE_OPXOR: \</a>
+<a name="ln929">			p-&gt;fld ^= cast m-&gt;num_mask; \</a>
+<a name="ln930">			break; \</a>
+<a name="ln931">		case FILE_OPADD: \</a>
+<a name="ln932">			p-&gt;fld += cast m-&gt;num_mask; \</a>
+<a name="ln933">			break; \</a>
+<a name="ln934">		case FILE_OPMINUS: \</a>
+<a name="ln935">			p-&gt;fld -= cast m-&gt;num_mask; \</a>
+<a name="ln936">			break; \</a>
+<a name="ln937">		case FILE_OPMULTIPLY: \</a>
+<a name="ln938">			p-&gt;fld *= cast m-&gt;num_mask; \</a>
+<a name="ln939">			break; \</a>
+<a name="ln940">		case FILE_OPDIVIDE: \</a>
+<a name="ln941">			if (cast m-&gt;num_mask == 0) \</a>
+<a name="ln942">				return -1; \</a>
+<a name="ln943">			p-&gt;fld /= cast m-&gt;num_mask; \</a>
+<a name="ln944">			break; \</a>
+<a name="ln945">		case FILE_OPMODULO: \</a>
+<a name="ln946">			if (cast m-&gt;num_mask == 0) \</a>
+<a name="ln947">				return -1; \</a>
+<a name="ln948">			p-&gt;fld %= cast m-&gt;num_mask; \</a>
+<a name="ln949">			break; \</a>
+<a name="ln950">		} \</a>
+<a name="ln951">	if (m-&gt;mask_op &amp; FILE_OPINVERSE) \</a>
+<a name="ln952">		p-&gt;fld = ~p-&gt;fld \</a>
+<a name="ln953"> </a>
+<a name="ln954">private int</a>
+<a name="ln955">cvt_8(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln956">{</a>
+<a name="ln957">	DO_CVT(b, (uint8_t));</a>
+<a name="ln958">	return 0;</a>
+<a name="ln959">}</a>
+<a name="ln960"> </a>
+<a name="ln961">private int</a>
+<a name="ln962">cvt_16(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln963">{</a>
+<a name="ln964">	DO_CVT(h, (uint16_t));</a>
+<a name="ln965">	return 0;</a>
+<a name="ln966">}</a>
+<a name="ln967"> </a>
+<a name="ln968">private int</a>
+<a name="ln969">cvt_32(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln970">{</a>
+<a name="ln971">	DO_CVT(l, (uint32_t));</a>
+<a name="ln972">	return 0;</a>
+<a name="ln973">}</a>
+<a name="ln974"> </a>
+<a name="ln975">private int</a>
+<a name="ln976">cvt_64(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln977">{</a>
+<a name="ln978">	DO_CVT(q, (uint64_t));</a>
+<a name="ln979">	return 0;</a>
+<a name="ln980">}</a>
+<a name="ln981"> </a>
+<a name="ln982">#define DO_CVT2(fld, cast) \</a>
+<a name="ln983">	if (m-&gt;num_mask) \</a>
+<a name="ln984">		switch (m-&gt;mask_op &amp; FILE_OPS_MASK) { \</a>
+<a name="ln985">		case FILE_OPADD: \</a>
+<a name="ln986">			p-&gt;fld += cast m-&gt;num_mask; \</a>
+<a name="ln987">			break; \</a>
+<a name="ln988">		case FILE_OPMINUS: \</a>
+<a name="ln989">			p-&gt;fld -= cast m-&gt;num_mask; \</a>
+<a name="ln990">			break; \</a>
+<a name="ln991">		case FILE_OPMULTIPLY: \</a>
+<a name="ln992">			p-&gt;fld *= cast m-&gt;num_mask; \</a>
+<a name="ln993">			break; \</a>
+<a name="ln994">		case FILE_OPDIVIDE: \</a>
+<a name="ln995">			if (cast m-&gt;num_mask == 0) \</a>
+<a name="ln996">				return -1; \</a>
+<a name="ln997">			p-&gt;fld /= cast m-&gt;num_mask; \</a>
+<a name="ln998">			break; \</a>
+<a name="ln999">		} \</a>
+<a name="ln1000"> </a>
+<a name="ln1001">private int</a>
+<a name="ln1002">cvt_float(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln1003">{</a>
+<a name="ln1004">	DO_CVT2(f, (float));</a>
+<a name="ln1005">	return 0;</a>
+<a name="ln1006">}</a>
+<a name="ln1007"> </a>
+<a name="ln1008">private int</a>
+<a name="ln1009">cvt_double(union VALUETYPE *p, const struct magic *m)</a>
+<a name="ln1010">{</a>
+<a name="ln1011">	DO_CVT2(d, (double));</a>
+<a name="ln1012">	return 0;</a>
+<a name="ln1013">}</a>
+<a name="ln1014"> </a>
+<a name="ln1015">/*</a>
+<a name="ln1016"> * Convert the byte order of the data we are looking at</a>
+<a name="ln1017"> * While we're here, let's apply the mask operation</a>
+<a name="ln1018"> * (unless you have a better idea)</a>
+<a name="ln1019"> */</a>
+<a name="ln1020">private int</a>
+<a name="ln1021">mconvert(struct magic_set *ms, struct magic *m, int flip)</a>
+<a name="ln1022">{</a>
+<a name="ln1023">	union VALUETYPE *p = &amp;ms-&gt;ms_value;</a>
+<a name="ln1024"> </a>
+<a name="ln1025">	switch (cvt_flip(m-&gt;type, flip)) {</a>
+<a name="ln1026">	case FILE_BYTE:</a>
+<a name="ln1027">		if (cvt_8(p, m) == -1)</a>
+<a name="ln1028">			goto out;</a>
+<a name="ln1029">		return 1;</a>
+<a name="ln1030">	case FILE_SHORT:</a>
+<a name="ln1031">		if (cvt_16(p, m) == -1)</a>
+<a name="ln1032">			goto out;</a>
+<a name="ln1033">		return 1;</a>
+<a name="ln1034">	case FILE_LONG:</a>
+<a name="ln1035">	case FILE_DATE:</a>
+<a name="ln1036">	case FILE_LDATE:</a>
+<a name="ln1037">		if (cvt_32(p, m) == -1)</a>
+<a name="ln1038">			goto out;</a>
+<a name="ln1039">		return 1;</a>
+<a name="ln1040">	case FILE_QUAD:</a>
+<a name="ln1041">	case FILE_QDATE:</a>
+<a name="ln1042">	case FILE_QLDATE:</a>
+<a name="ln1043">	case FILE_QWDATE:</a>
+<a name="ln1044">		if (cvt_64(p, m) == -1)</a>
+<a name="ln1045">			goto out;</a>
+<a name="ln1046">		return 1;</a>
+<a name="ln1047">	case FILE_STRING:</a>
+<a name="ln1048">	case FILE_BESTRING16:</a>
+<a name="ln1049">	case FILE_LESTRING16: {</a>
+<a name="ln1050">		/* Null terminate and eat *trailing* return */</a>
+<a name="ln1051">		p-&gt;s[sizeof(p-&gt;s) - 1] = '\0';</a>
+<a name="ln1052">		return 1;</a>
+<a name="ln1053">	}</a>
+<a name="ln1054">	case FILE_PSTRING: {</a>
+<a name="ln1055">		size_t sz = file_pstring_length_size(m);</a>
+<a name="ln1056">		char *ptr1 = p-&gt;s, *ptr2 = ptr1 + sz;</a>
+<a name="ln1057">		size_t len = file_pstring_get_length(m, ptr1);</a>
+<a name="ln1058">		sz = sizeof(p-&gt;s) - sz; /* maximum length of string */</a>
+<a name="ln1059">		if (len &gt;= sz) {</a>
+<a name="ln1060">			/*</a>
+<a name="ln1061">			 * The size of the pascal string length (sz)</a>
+<a name="ln1062">			 * is 1, 2, or 4. We need at least 1 byte for NUL</a>
+<a name="ln1063">			 * termination, but we've already truncated the</a>
+<a name="ln1064">			 * string by p-&gt;s, so we need to deduct sz.</a>
+<a name="ln1065">			 * Because we can use one of the bytes of the length</a>
+<a name="ln1066">			 * after we shifted as NUL termination.</a>
+<a name="ln1067">			 */ </a>
+<a name="ln1068">			len = sz;</a>
+<a name="ln1069">		}</a>
+<a name="ln1070">		while (len--)</a>
+<a name="ln1071">			*ptr1++ = *ptr2++;</a>
+<a name="ln1072">		*ptr1 = '\0';</a>
+<a name="ln1073">		return 1;</a>
+<a name="ln1074">	}</a>
+<a name="ln1075">	case FILE_BESHORT:</a>
+<a name="ln1076">		p-&gt;h = (short)BE16(p);</a>
+<a name="ln1077">		if (cvt_16(p, m) == -1)</a>
+<a name="ln1078">			goto out;</a>
+<a name="ln1079">		return 1;</a>
+<a name="ln1080">	case FILE_BELONG:</a>
+<a name="ln1081">	case FILE_BEDATE:</a>
+<a name="ln1082">	case FILE_BELDATE:</a>
+<a name="ln1083">		p-&gt;l = (int32_t)BE32(p);</a>
+<a name="ln1084">		if (cvt_32(p, m) == -1)</a>
+<a name="ln1085">			goto out;</a>
+<a name="ln1086">		return 1;</a>
+<a name="ln1087">	case FILE_BEQUAD:</a>
+<a name="ln1088">	case FILE_BEQDATE:</a>
+<a name="ln1089">	case FILE_BEQLDATE:</a>
+<a name="ln1090">	case FILE_BEQWDATE:</a>
+<a name="ln1091">		p-&gt;q = (uint64_t)BE64(p);</a>
+<a name="ln1092">		if (cvt_64(p, m) == -1)</a>
+<a name="ln1093">			goto out;</a>
+<a name="ln1094">		return 1;</a>
+<a name="ln1095">	case FILE_LESHORT:</a>
+<a name="ln1096">		p-&gt;h = (short)LE16(p);</a>
+<a name="ln1097">		if (cvt_16(p, m) == -1)</a>
+<a name="ln1098">			goto out;</a>
+<a name="ln1099">		return 1;</a>
+<a name="ln1100">	case FILE_LELONG:</a>
+<a name="ln1101">	case FILE_LEDATE:</a>
+<a name="ln1102">	case FILE_LELDATE:</a>
+<a name="ln1103">		p-&gt;l = (int32_t)LE32(p);</a>
+<a name="ln1104">		if (cvt_32(p, m) == -1)</a>
+<a name="ln1105">			goto out;</a>
+<a name="ln1106">		return 1;</a>
+<a name="ln1107">	case FILE_LEQUAD:</a>
+<a name="ln1108">	case FILE_LEQDATE:</a>
+<a name="ln1109">	case FILE_LEQLDATE:</a>
+<a name="ln1110">	case FILE_LEQWDATE:</a>
+<a name="ln1111">		p-&gt;q = (uint64_t)LE64(p);</a>
+<a name="ln1112">		if (cvt_64(p, m) == -1)</a>
+<a name="ln1113">			goto out;</a>
+<a name="ln1114">		return 1;</a>
+<a name="ln1115">	case FILE_MELONG:</a>
+<a name="ln1116">	case FILE_MEDATE:</a>
+<a name="ln1117">	case FILE_MELDATE:</a>
+<a name="ln1118">		p-&gt;l = (int32_t)ME32(p);</a>
+<a name="ln1119">		if (cvt_32(p, m) == -1)</a>
+<a name="ln1120">			goto out;</a>
+<a name="ln1121">		return 1;</a>
+<a name="ln1122">	case FILE_FLOAT:</a>
+<a name="ln1123">		if (cvt_float(p, m) == -1)</a>
+<a name="ln1124">			goto out;</a>
+<a name="ln1125">		return 1;</a>
+<a name="ln1126">	case FILE_BEFLOAT:</a>
+<a name="ln1127">		p-&gt;l = BE32(p);</a>
+<a name="ln1128">		if (cvt_float(p, m) == -1)</a>
+<a name="ln1129">			goto out;</a>
+<a name="ln1130">		return 1;</a>
+<a name="ln1131">	case FILE_LEFLOAT:</a>
+<a name="ln1132">		p-&gt;l = LE32(p);</a>
+<a name="ln1133">		if (cvt_float(p, m) == -1)</a>
+<a name="ln1134">			goto out;</a>
+<a name="ln1135">		return 1;</a>
+<a name="ln1136">	case FILE_DOUBLE:</a>
+<a name="ln1137">		if (cvt_double(p, m) == -1)</a>
+<a name="ln1138">			goto out;</a>
+<a name="ln1139">		return 1;</a>
+<a name="ln1140">	case FILE_BEDOUBLE:</a>
+<a name="ln1141">		p-&gt;q = BE64(p); </a>
+<a name="ln1142">		if (cvt_double(p, m) == -1)</a>
+<a name="ln1143">			goto out;</a>
+<a name="ln1144">		return 1;</a>
+<a name="ln1145">	case FILE_LEDOUBLE:</a>
+<a name="ln1146">		p-&gt;q = LE64(p);</a>
+<a name="ln1147">		if (cvt_double(p, m) == -1)</a>
+<a name="ln1148">			goto out;</a>
+<a name="ln1149">		return 1;</a>
+<a name="ln1150">	case FILE_REGEX:</a>
+<a name="ln1151">	case FILE_SEARCH:</a>
+<a name="ln1152">	case FILE_DEFAULT:</a>
+<a name="ln1153">	case FILE_CLEAR:</a>
+<a name="ln1154">	case FILE_NAME:</a>
+<a name="ln1155">	case FILE_USE:</a>
+<a name="ln1156">	case FILE_DER:</a>
+<a name="ln1157">		return 1;</a>
+<a name="ln1158">	default:</a>
+<a name="ln1159">		file_magerror(ms, &quot;invalid type %d in mconvert()&quot;, m-&gt;type);</a>
+<a name="ln1160">		return 0;</a>
+<a name="ln1161">	}</a>
+<a name="ln1162">out:</a>
+<a name="ln1163">	file_magerror(ms, &quot;zerodivide in mconvert()&quot;);</a>
+<a name="ln1164">	return 0;</a>
+<a name="ln1165">}</a>
+<a name="ln1166"> </a>
+<a name="ln1167"> </a>
+<a name="ln1168">private void</a>
+<a name="ln1169">mdebug(uint32_t offset, const char *str, size_t len)</a>
+<a name="ln1170">{</a>
+<a name="ln1171">	(void) fprintf(stderr, &quot;mget/%&quot; SIZE_T_FORMAT &quot;u @%d: &quot;, len, offset);</a>
+<a name="ln1172">	file_showstr(stderr, str, len);</a>
+<a name="ln1173">	(void) fputc('\n', stderr);</a>
+<a name="ln1174">	(void) fputc('\n', stderr);</a>
+<a name="ln1175">}</a>
+<a name="ln1176"> </a>
+<a name="ln1177">private int</a>
+<a name="ln1178">mcopy(struct magic_set *ms, union VALUETYPE *p, int type, int indir,</a>
+<a name="ln1179">    const unsigned char *s, uint32_t offset, size_t nbytes, struct magic *m)</a>
+<a name="ln1180">{</a>
+<a name="ln1181">	/*</a>
+<a name="ln1182">	 * Note: FILE_SEARCH and FILE_REGEX do not actually copy</a>
+<a name="ln1183">	 * anything, but setup pointers into the source</a>
+<a name="ln1184">	 */</a>
+<a name="ln1185">	if (indir == 0) {</a>
+<a name="ln1186">		switch (type) {</a>
+<a name="ln1187">		case FILE_DER:</a>
+<a name="ln1188">		case FILE_SEARCH:</a>
+<a name="ln1189">			if (offset &gt; nbytes)</a>
+<a name="ln1190">				offset = CAST(uint32_t, nbytes);</a>
+<a name="ln1191">			ms-&gt;search.s = RCAST(const char *, s) + offset;</a>
+<a name="ln1192">			ms-&gt;search.s_len = nbytes - offset;</a>
+<a name="ln1193">			ms-&gt;search.offset = offset;</a>
+<a name="ln1194">			return 0;</a>
+<a name="ln1195"> </a>
+<a name="ln1196">		case FILE_REGEX: {</a>
+<a name="ln1197">			const char *b;</a>
+<a name="ln1198">			const char *c;</a>
+<a name="ln1199">			const char *last;	/* end of search region */</a>
+<a name="ln1200">			const char *buf;	/* start of search region */</a>
+<a name="ln1201">			const char *end;</a>
+<a name="ln1202">			size_t lines, linecnt, bytecnt;</a>
+<a name="ln1203"> </a>
+<a name="ln1204">			if (s == NULL) {</a>
+<a name="ln1205">				ms-&gt;search.s_len = 0;</a>
+<a name="ln1206">				ms-&gt;search.s = NULL;</a>
+<a name="ln1207">				return 0;</a>
+<a name="ln1208">			}</a>
+<a name="ln1209"> </a>
+<a name="ln1210">			if (m-&gt;str_flags &amp; REGEX_LINE_COUNT) {</a>
+<a name="ln1211">				linecnt = m-&gt;str_range;</a>
+<a name="ln1212">				bytecnt = linecnt * 80;</a>
+<a name="ln1213">			} else {</a>
+<a name="ln1214">				linecnt = 0;</a>
+<a name="ln1215">				bytecnt = m-&gt;str_range;</a>
+<a name="ln1216">			}</a>
+<a name="ln1217"> </a>
+<a name="ln1218">			if (bytecnt == 0 || bytecnt &gt; nbytes - offset)</a>
+<a name="ln1219">				bytecnt = nbytes - offset;</a>
+<a name="ln1220">			if (bytecnt &gt; ms-&gt;regex_max)</a>
+<a name="ln1221">				bytecnt = ms-&gt;regex_max;</a>
+<a name="ln1222"> </a>
+<a name="ln1223">			buf = RCAST(const char *, s) + offset;</a>
+<a name="ln1224">			end = last = RCAST(const char *, s) + bytecnt + offset;</a>
+<a name="ln1225">			/* mget() guarantees buf &lt;= last */</a>
+<a name="ln1226">			for (lines = linecnt, b = buf; lines &amp;&amp; b &lt; end &amp;&amp;</a>
+<a name="ln1227">			     ((b = CAST(const char *,</a>
+<a name="ln1228">				 memchr(c = b, '\n', CAST(size_t, (end - b)))))</a>
+<a name="ln1229">			     || (b = CAST(const char *,</a>
+<a name="ln1230">				 memchr(c, '\r', CAST(size_t, (end - c))))));</a>
+<a name="ln1231">			     lines--, b++) {</a>
+<a name="ln1232">				last = b;</a>
+<a name="ln1233">				if (b &lt; end - 1 &amp;&amp; b[0] == '\r' &amp;&amp; b[1] == '\n')</a>
+<a name="ln1234">					b++;</a>
+<a name="ln1235">			}</a>
+<a name="ln1236">			if (lines)</a>
+<a name="ln1237">				last = RCAST(const char *, s) + bytecnt;</a>
+<a name="ln1238"> </a>
+<a name="ln1239">			ms-&gt;search.s = buf;</a>
+<a name="ln1240">			ms-&gt;search.s_len = last - buf;</a>
+<a name="ln1241">			ms-&gt;search.offset = offset;</a>
+<a name="ln1242">			ms-&gt;search.rm_len = 0;</a>
+<a name="ln1243">			return 0;</a>
+<a name="ln1244">		}</a>
+<a name="ln1245">		case FILE_BESTRING16:</a>
+<a name="ln1246">		case FILE_LESTRING16: {</a>
+<a name="ln1247">			const unsigned char *src = s + offset;</a>
+<a name="ln1248">			const unsigned char *esrc = s + nbytes;</a>
+<a name="ln1249">			char *dst = p-&gt;s;</a>
+<a name="ln1250">			char *edst = &amp;p-&gt;s[sizeof(p-&gt;s) - 1];</a>
+<a name="ln1251"> </a>
+<a name="ln1252">			if (type == FILE_BESTRING16)</a>
+<a name="ln1253">				src++;</a>
+<a name="ln1254"> </a>
+<a name="ln1255">			/* check that offset is within range */</a>
+<a name="ln1256">			if (offset &gt;= nbytes)</a>
+<a name="ln1257">				break;</a>
+<a name="ln1258">			for (/*EMPTY*/; src &lt; esrc; src += 2, dst++) {</a>
+<a name="ln1259">				if (dst &lt; edst)</a>
+<a name="ln1260">					*dst = *src;</a>
+<a name="ln1261">				else</a>
+<a name="ln1262">					break;</a>
+<a name="ln1263">				if (*dst == '\0') {</a>
+<a name="ln1264">					if (type == FILE_BESTRING16 ?</a>
+<a name="ln1265">					    *(src - 1) != '\0' :</a>
+<a name="ln1266">					    ((src + 1 &lt; esrc) &amp;&amp;</a>
+<a name="ln1267">					    *(src + 1) != '\0'))</a>
+<a name="ln1268">						*dst = ' ';</a>
+<a name="ln1269">				}</a>
+<a name="ln1270">			}</a>
+<a name="ln1271">			*edst = '\0';</a>
+<a name="ln1272">			return 0;</a>
+<a name="ln1273">		}</a>
+<a name="ln1274">		case FILE_STRING:	/* XXX - these two should not need */</a>
+<a name="ln1275">		case FILE_PSTRING:	/* to copy anything, but do anyway. */</a>
+<a name="ln1276">		default:</a>
+<a name="ln1277">			break;</a>
+<a name="ln1278">		}</a>
+<a name="ln1279">	}</a>
+<a name="ln1280"> </a>
+<a name="ln1281">	if (offset &gt;= nbytes) {</a>
+<a name="ln1282">		(void)memset(p, '\0', sizeof(*p));</a>
+<a name="ln1283">		return 0;</a>
+<a name="ln1284">	}</a>
+<a name="ln1285">	if (nbytes - offset &lt; sizeof(*p))</a>
+<a name="ln1286">		nbytes = nbytes - offset;</a>
+<a name="ln1287">	else</a>
+<a name="ln1288">		nbytes = sizeof(*p);</a>
+<a name="ln1289"> </a>
+<a name="ln1290">	(void)memcpy(p, s + offset, nbytes);</a>
+<a name="ln1291"> </a>
+<a name="ln1292">	/*</a>
+<a name="ln1293">	 * the usefulness of padding with zeroes eludes me, it</a>
+<a name="ln1294">	 * might even cause problems</a>
+<a name="ln1295">	 */</a>
+<a name="ln1296">	if (nbytes &lt; sizeof(*p))</a>
+<a name="ln1297">		(void)memset(((char *)(void *)p) + nbytes, '\0',</a>
+<a name="ln1298">		    sizeof(*p) - nbytes);</a>
+<a name="ln1299">	return 0;</a>
+<a name="ln1300">}</a>
+<a name="ln1301"> </a>
+<a name="ln1302">private uint32_t</a>
+<a name="ln1303">do_ops(struct magic *m, intmax_t lhs, intmax_t off)</a>
+<a name="ln1304">{</a>
+<a name="ln1305">	intmax_t offset;</a>
+<a name="ln1306">	if (off) {</a>
+<a name="ln1307">		switch (m-&gt;in_op &amp; FILE_OPS_MASK) {</a>
+<a name="ln1308">		case FILE_OPAND:</a>
+<a name="ln1309">			offset = lhs &amp; off;</a>
+<a name="ln1310">			break;</a>
+<a name="ln1311">		case FILE_OPOR:</a>
+<a name="ln1312">			offset = lhs | off;</a>
+<a name="ln1313">			break;</a>
+<a name="ln1314">		case FILE_OPXOR:</a>
+<a name="ln1315">			offset = lhs ^ off;</a>
+<a name="ln1316">			break;</a>
+<a name="ln1317">		case FILE_OPADD:</a>
+<a name="ln1318">			offset = lhs + off;</a>
+<a name="ln1319">			break;</a>
+<a name="ln1320">		case FILE_OPMINUS:</a>
+<a name="ln1321">			offset = lhs - off;</a>
+<a name="ln1322">			break;</a>
+<a name="ln1323">		case FILE_OPMULTIPLY:</a>
+<a name="ln1324">			offset = lhs * off;</a>
+<a name="ln1325">			break;</a>
+<a name="ln1326">		case FILE_OPDIVIDE:</a>
+<a name="ln1327">			offset = lhs / off;</a>
+<a name="ln1328">			break;</a>
+<a name="ln1329">		case FILE_OPMODULO:</a>
+<a name="ln1330">			offset = lhs % off;</a>
+<a name="ln1331">			break;</a>
+<a name="ln1332">		}</a>
+<a name="ln1333">	} else</a>
+<a name="ln1334">		offset = lhs;</a>
+<a name="ln1335">	if (m-&gt;in_op &amp; FILE_OPINVERSE)</a>
+<a name="ln1336">		offset = ~offset;</a>
+<a name="ln1337"> </a>
+<a name="ln1338">	return (uint32_t)offset;</a>
+<a name="ln1339">}</a>
+<a name="ln1340"> </a>
+<a name="ln1341">private int</a>
+<a name="ln1342">mget(struct magic_set *ms, const unsigned char *s, struct magic *m,</a>
+<a name="ln1343">    size_t nbytes, size_t o, unsigned int cont_level, int mode, int text,</a>
+<a name="ln1344">    int flip, uint16_t *indir_count, uint16_t *name_count,</a>
+<a name="ln1345">    int *printed_something, int *need_separator, int *returnval)</a>
+<a name="ln1346">{</a>
+<a name="ln1347">	uint32_t offset = ms-&gt;offset;</a>
+<a name="ln1348">	intmax_t lhs;</a>
+<a name="ln1349">	file_pushbuf_t *pb;</a>
+<a name="ln1350">	int rv, oneed_separator, in_type;</a>
+<a name="ln1351">	char *rbuf;</a>
+<a name="ln1352">	union VALUETYPE *p = &amp;ms-&gt;ms_value;</a>
+<a name="ln1353">	struct mlist ml;</a>
+<a name="ln1354"> </a>
+<a name="ln1355">	if (*indir_count &gt;= ms-&gt;indir_max) {</a>
+<a name="ln1356">		file_error(ms, 0, &quot;indirect count (%hu) exceeded&quot;,</a>
+<a name="ln1357">		    *indir_count);</a>
+<a name="ln1358">		return -1;</a>
+<a name="ln1359">	}</a>
+<a name="ln1360"> </a>
+<a name="ln1361">	if (*name_count &gt;= ms-&gt;name_max) {</a>
+<a name="ln1362">		file_error(ms, 0, &quot;name use count (%hu) exceeded&quot;,</a>
+<a name="ln1363">		    *name_count);</a>
+<a name="ln1364">		return -1;</a>
+<a name="ln1365">	}</a>
+<a name="ln1366"> </a>
+<a name="ln1367">	if (mcopy(ms, p, m-&gt;type, m-&gt;flag &amp; INDIR, s, (uint32_t)(offset + o),</a>
+<a name="ln1368">	    (uint32_t)nbytes, m) == -1)</a>
+<a name="ln1369">		return -1;</a>
+<a name="ln1370"> </a>
+<a name="ln1371">	if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0) {</a>
+<a name="ln1372">		fprintf(stderr, &quot;mget(type=%d, flag=%#x, offset=%u, o=%&quot;</a>
+<a name="ln1373">		    SIZE_T_FORMAT &quot;u, &quot; &quot;nbytes=%&quot; SIZE_T_FORMAT</a>
+<a name="ln1374">		    &quot;u, il=%hu, nc=%hu)\n&quot;,</a>
+<a name="ln1375">		    m-&gt;type, m-&gt;flag, offset, o, nbytes,</a>
+<a name="ln1376">		    *indir_count, *name_count);</a>
+<a name="ln1377">		mdebug(offset, (char *)(void *)p, sizeof(union VALUETYPE));</a>
+<a name="ln1378">#ifndef COMPILE_ONLY</a>
+<a name="ln1379">		file_mdump(m);</a>
+<a name="ln1380">#endif</a>
+<a name="ln1381">	}</a>
+<a name="ln1382"> </a>
+<a name="ln1383">	if (m-&gt;flag &amp; INDIR) {</a>
+<a name="ln1384">		intmax_t off = m-&gt;in_offset;</a>
+<a name="ln1385">		const int sgn = m-&gt;in_op &amp; FILE_OPSIGNED;</a>
+<a name="ln1386">		if (m-&gt;in_op &amp; FILE_OPINDIRECT) {</a>
+<a name="ln1387">			const union VALUETYPE *q = CAST(const union VALUETYPE *,</a>
+<a name="ln1388">			    ((const void *)(s + offset + off)));</a>
+<a name="ln1389">			if (OFFSET_OOB(nbytes, offset + off, sizeof(*q)))</a>
+<a name="ln1390">				return 0;</a>
+<a name="ln1391">			switch (cvt_flip(m-&gt;in_type, flip)) {</a>
+<a name="ln1392">			case FILE_BYTE:</a>
+<a name="ln1393">				off = SEXT(sgn,8,q-&gt;b);</a>
+<a name="ln1394">				break;</a>
+<a name="ln1395">			case FILE_SHORT:</a>
+<a name="ln1396">				off = SEXT(sgn,16,q-&gt;h);</a>
+<a name="ln1397">				break;</a>
+<a name="ln1398">			case FILE_BESHORT:</a>
+<a name="ln1399">				off = SEXT(sgn,16,BE16(q));</a>
+<a name="ln1400">				break;</a>
+<a name="ln1401">			case FILE_LESHORT:</a>
+<a name="ln1402">				off = SEXT(sgn,16,LE16(q));</a>
+<a name="ln1403">				break;</a>
+<a name="ln1404">			case FILE_LONG:</a>
+<a name="ln1405">				off = SEXT(sgn,32,q-&gt;l);</a>
+<a name="ln1406">				break;</a>
+<a name="ln1407">			case FILE_BELONG:</a>
+<a name="ln1408">			case FILE_BEID3:</a>
+<a name="ln1409">				off = SEXT(sgn,32,BE32(q));</a>
+<a name="ln1410">				break;</a>
+<a name="ln1411">			case FILE_LEID3:</a>
+<a name="ln1412">			case FILE_LELONG:</a>
+<a name="ln1413">				off = SEXT(sgn,32,LE32(q));</a>
+<a name="ln1414">				break;</a>
+<a name="ln1415">			case FILE_MELONG:</a>
+<a name="ln1416">				off = SEXT(sgn,32,ME32(q));</a>
+<a name="ln1417">				break;</a>
+<a name="ln1418">			}</a>
+<a name="ln1419">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1420">				fprintf(stderr, &quot;indirect offs=%jd\n&quot;, off);</a>
+<a name="ln1421">		}</a>
+<a name="ln1422">		switch (in_type = cvt_flip(m-&gt;in_type, flip)) {</a>
+<a name="ln1423">		case FILE_BYTE:</a>
+<a name="ln1424">			if (OFFSET_OOB(nbytes, offset, 1))</a>
+<a name="ln1425">				return 0;</a>
+<a name="ln1426">			offset = do_ops(m, SEXT(sgn,8,p-&gt;b), off);</a>
+<a name="ln1427">			break;</a>
+<a name="ln1428">		case FILE_BESHORT:</a>
+<a name="ln1429">			if (OFFSET_OOB(nbytes, offset, 2))</a>
+<a name="ln1430">				return 0;</a>
+<a name="ln1431">			offset = do_ops(m, SEXT(sgn,16,BE16(p)), off);</a>
+<a name="ln1432">			break;</a>
+<a name="ln1433">		case FILE_LESHORT:</a>
+<a name="ln1434">			if (OFFSET_OOB(nbytes, offset, 2))</a>
+<a name="ln1435">				return 0;</a>
+<a name="ln1436">			offset = do_ops(m, SEXT(sgn,16,LE16(p)), off);</a>
+<a name="ln1437">			break;</a>
+<a name="ln1438">		case FILE_SHORT:</a>
+<a name="ln1439">			if (OFFSET_OOB(nbytes, offset, 2))</a>
+<a name="ln1440">				return 0;</a>
+<a name="ln1441">			offset = do_ops(m, SEXT(sgn,16,p-&gt;h), off);</a>
+<a name="ln1442">			break;</a>
+<a name="ln1443">		case FILE_BELONG:</a>
+<a name="ln1444">		case FILE_BEID3:</a>
+<a name="ln1445">			if (OFFSET_OOB(nbytes, offset, 4))</a>
+<a name="ln1446">				return 0;</a>
+<a name="ln1447">			lhs = BE32(p);</a>
+<a name="ln1448">			if (in_type == FILE_BEID3)</a>
+<a name="ln1449">				lhs = cvt_id3(ms, (uint32_t)lhs);</a>
+<a name="ln1450">			offset = do_ops(m, SEXT(sgn,32,lhs), off);</a>
+<a name="ln1451">			break;</a>
+<a name="ln1452">		case FILE_LELONG:</a>
+<a name="ln1453">		case FILE_LEID3:</a>
+<a name="ln1454">			if (OFFSET_OOB(nbytes, offset, 4))</a>
+<a name="ln1455">				return 0;</a>
+<a name="ln1456">			lhs = LE32(p);</a>
+<a name="ln1457">			if (in_type == FILE_LEID3)</a>
+<a name="ln1458">				lhs = cvt_id3(ms, (uint32_t)lhs);</a>
+<a name="ln1459">			offset = do_ops(m, SEXT(sgn,32,lhs), off);</a>
+<a name="ln1460">			break;</a>
+<a name="ln1461">		case FILE_MELONG:</a>
+<a name="ln1462">			if (OFFSET_OOB(nbytes, offset, 4))</a>
+<a name="ln1463">				return 0;</a>
+<a name="ln1464">			offset = do_ops(m, SEXT(sgn,32,ME32(p)), off);</a>
+<a name="ln1465">			break;</a>
+<a name="ln1466">		case FILE_LONG:</a>
+<a name="ln1467">			if (OFFSET_OOB(nbytes, offset, 4))</a>
+<a name="ln1468">				return 0;</a>
+<a name="ln1469">			offset = do_ops(m, SEXT(sgn,32,p-&gt;l), off);</a>
+<a name="ln1470">			break;</a>
+<a name="ln1471">		default:</a>
+<a name="ln1472">			break;</a>
+<a name="ln1473">		}</a>
+<a name="ln1474"> </a>
+<a name="ln1475">		if (m-&gt;flag &amp; INDIROFFADD) {</a>
+<a name="ln1476">			offset += ms-&gt;c.li[cont_level-1].off;</a>
+<a name="ln1477">			if (offset == 0) {</a>
+<a name="ln1478">				if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1479">					fprintf(stderr,</a>
+<a name="ln1480">					    &quot;indirect *zero* offset\n&quot;);</a>
+<a name="ln1481">				return 0;</a>
+<a name="ln1482">			}</a>
+<a name="ln1483">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1484">				fprintf(stderr, &quot;indirect +offs=%u\n&quot;, offset);</a>
+<a name="ln1485">		}</a>
+<a name="ln1486">		if (mcopy(ms, p, m-&gt;type, 0, s, offset, nbytes, m) == -1)</a>
+<a name="ln1487">			return -1;</a>
+<a name="ln1488">		ms-&gt;offset = offset;</a>
+<a name="ln1489"> </a>
+<a name="ln1490">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0) {</a>
+<a name="ln1491">			mdebug(offset, (char *)(void *)p,</a>
+<a name="ln1492">			    sizeof(union VALUETYPE));</a>
+<a name="ln1493">#ifndef COMPILE_ONLY</a>
+<a name="ln1494">			file_mdump(m);</a>
+<a name="ln1495">#endif</a>
+<a name="ln1496">		}</a>
+<a name="ln1497">	}</a>
+<a name="ln1498"> </a>
+<a name="ln1499">	/* Verify we have enough data to match magic type */</a>
+<a name="ln1500">	switch (m-&gt;type) {</a>
+<a name="ln1501">	case FILE_BYTE:</a>
+<a name="ln1502">		if (OFFSET_OOB(nbytes, offset, 1))</a>
+<a name="ln1503">			return 0;</a>
+<a name="ln1504">		break;</a>
+<a name="ln1505"> </a>
+<a name="ln1506">	case FILE_SHORT:</a>
+<a name="ln1507">	case FILE_BESHORT:</a>
+<a name="ln1508">	case FILE_LESHORT:</a>
+<a name="ln1509">		if (OFFSET_OOB(nbytes, offset, 2))</a>
+<a name="ln1510">			return 0;</a>
+<a name="ln1511">		break;</a>
+<a name="ln1512"> </a>
+<a name="ln1513">	case FILE_LONG:</a>
+<a name="ln1514">	case FILE_BELONG:</a>
+<a name="ln1515">	case FILE_LELONG:</a>
+<a name="ln1516">	case FILE_MELONG:</a>
+<a name="ln1517">	case FILE_DATE:</a>
+<a name="ln1518">	case FILE_BEDATE:</a>
+<a name="ln1519">	case FILE_LEDATE:</a>
+<a name="ln1520">	case FILE_MEDATE:</a>
+<a name="ln1521">	case FILE_LDATE:</a>
+<a name="ln1522">	case FILE_BELDATE:</a>
+<a name="ln1523">	case FILE_LELDATE:</a>
+<a name="ln1524">	case FILE_MELDATE:</a>
+<a name="ln1525">	case FILE_FLOAT:</a>
+<a name="ln1526">	case FILE_BEFLOAT:</a>
+<a name="ln1527">	case FILE_LEFLOAT:</a>
+<a name="ln1528">		if (OFFSET_OOB(nbytes, offset, 4))</a>
+<a name="ln1529">			return 0;</a>
+<a name="ln1530">		break;</a>
+<a name="ln1531"> </a>
+<a name="ln1532">	case FILE_DOUBLE:</a>
+<a name="ln1533">	case FILE_BEDOUBLE:</a>
+<a name="ln1534">	case FILE_LEDOUBLE:</a>
+<a name="ln1535">		if (OFFSET_OOB(nbytes, offset, 8))</a>
+<a name="ln1536">			return 0;</a>
+<a name="ln1537">		break;</a>
+<a name="ln1538"> </a>
+<a name="ln1539">	case FILE_STRING:</a>
+<a name="ln1540">	case FILE_PSTRING:</a>
+<a name="ln1541">	case FILE_SEARCH:</a>
+<a name="ln1542">		if (OFFSET_OOB(nbytes, offset, m-&gt;vallen))</a>
+<a name="ln1543">			return 0;</a>
+<a name="ln1544">		break;</a>
+<a name="ln1545"> </a>
+<a name="ln1546">	case FILE_REGEX:</a>
+<a name="ln1547">		if (nbytes &lt; offset)</a>
+<a name="ln1548">			return 0;</a>
+<a name="ln1549">		break;</a>
+<a name="ln1550"> </a>
+<a name="ln1551">	case FILE_INDIRECT:</a>
+<a name="ln1552">		if (m-&gt;str_flags &amp; INDIRECT_RELATIVE)</a>
+<a name="ln1553">			offset += CAST(uint32_t, o);</a>
+<a name="ln1554">		if (offset == 0)</a>
+<a name="ln1555">			return 0;</a>
+<a name="ln1556"> </a>
+<a name="ln1557">		if (nbytes &lt; offset)</a>
+<a name="ln1558">			return 0;</a>
+<a name="ln1559"> </a>
+<a name="ln1560">		if ((pb = file_push_buffer(ms)) == NULL)</a>
+<a name="ln1561">			return -1;</a>
+<a name="ln1562"> </a>
+<a name="ln1563">		(*indir_count)++;</a>
+<a name="ln1564">		rv = file_softmagic(ms, s + offset, nbytes - offset,</a>
+<a name="ln1565">		    indir_count, name_count, BINTEST, text);</a>
+<a name="ln1566"> </a>
+<a name="ln1567">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1568">			fprintf(stderr, &quot;indirect @offs=%u[%d]\n&quot;, offset, rv);</a>
+<a name="ln1569"> </a>
+<a name="ln1570">		rbuf = file_pop_buffer(ms, pb);</a>
+<a name="ln1571">		if (rbuf == NULL &amp;&amp; ms-&gt;event_flags &amp; EVENT_HAD_ERR)</a>
+<a name="ln1572">			return -1;</a>
+<a name="ln1573"> </a>
+<a name="ln1574">		if (rv == 1) {</a>
+<a name="ln1575">			if ((ms-&gt;flags &amp; MAGIC_NODESC) == 0 &amp;&amp;</a>
+<a name="ln1576">			    file_printf(ms, F(ms, m, &quot;%u&quot;), offset) == -1) {</a>
+<a name="ln1577">				free(rbuf);</a>
+<a name="ln1578">				return -1;</a>
+<a name="ln1579">			}</a>
+<a name="ln1580">			if (file_printf(ms, &quot;%s&quot;, rbuf) == -1) {</a>
+<a name="ln1581">				free(rbuf);</a>
+<a name="ln1582">				return -1;</a>
+<a name="ln1583">			}</a>
+<a name="ln1584">		}</a>
+<a name="ln1585">		free(rbuf);</a>
+<a name="ln1586">		return rv;</a>
+<a name="ln1587"> </a>
+<a name="ln1588">	case FILE_USE:</a>
+<a name="ln1589">		if (nbytes &lt; offset)</a>
+<a name="ln1590">			return 0;</a>
+<a name="ln1591">		rbuf = m-&gt;value.s;</a>
+<a name="ln1592">		if (*rbuf == '^') {</a>
+<a name="ln1593">			rbuf++;</a>
+<a name="ln1594">			flip = !flip;</a>
+<a name="ln1595">		}</a>
+<a name="ln1596">		if (file_magicfind(ms, rbuf, &amp;ml) == -1) {</a>
+<a name="ln1597">			file_error(ms, 0, &quot;cannot find entry `%s'&quot;, rbuf);</a>
+<a name="ln1598">			return -1;</a>
+<a name="ln1599">		}</a>
+<a name="ln1600">		(*name_count)++;</a>
+<a name="ln1601">		oneed_separator = *need_separator;</a>
+<a name="ln1602">		if (m-&gt;flag &amp; NOSPACE)</a>
+<a name="ln1603">			*need_separator = 0;</a>
+<a name="ln1604">		rv = match(ms, ml.magic, ml.nmagic, s, nbytes, offset + o,</a>
+<a name="ln1605">		    mode, text, flip, indir_count, name_count,</a>
+<a name="ln1606">		    printed_something, need_separator, returnval);</a>
+<a name="ln1607">		if (rv != 1)</a>
+<a name="ln1608">		    *need_separator = oneed_separator;</a>
+<a name="ln1609">		return 1;</a>
+<a name="ln1610"> </a>
+<a name="ln1611">	case FILE_NAME:</a>
+<a name="ln1612">		if (ms-&gt;flags &amp; MAGIC_NODESC)</a>
+<a name="ln1613">			return 1;</a>
+<a name="ln1614">		if (file_printf(ms, &quot;%s&quot;, m-&gt;desc) == -1)</a>
+<a name="ln1615">			return -1;</a>
+<a name="ln1616">		return 1;</a>
+<a name="ln1617">	case FILE_DER:</a>
+<a name="ln1618">	case FILE_DEFAULT:	/* nothing to check */</a>
+<a name="ln1619">	case FILE_CLEAR:</a>
+<a name="ln1620">	default:</a>
+<a name="ln1621">		break;</a>
+<a name="ln1622">	}</a>
+<a name="ln1623">	if (!mconvert(ms, m, flip))</a>
+<a name="ln1624">		return 0;</a>
+<a name="ln1625">	return 1;</a>
+<a name="ln1626">}</a>
+<a name="ln1627"> </a>
+<a name="ln1628">private uint64_t</a>
+<a name="ln1629">file_strncmp(const char *s1, const char *s2, size_t len, uint32_t flags)</a>
+<a name="ln1630">{</a>
+<a name="ln1631">	/*</a>
+<a name="ln1632">	 * Convert the source args to unsigned here so that (1) the</a>
+<a name="ln1633">	 * compare will be unsigned as it is in strncmp() and (2) so</a>
+<a name="ln1634">	 * the ctype functions will work correctly without extra</a>
+<a name="ln1635">	 * casting.</a>
+<a name="ln1636">	 */</a>
+<a name="ln1637">	const unsigned char *a = (const unsigned char *)s1;</a>
+<a name="ln1638">	const unsigned char *b = (const unsigned char *)s2;</a>
+<a name="ln1639">	const unsigned char *eb = b + len;</a>
+<a name="ln1640">	uint64_t v;</a>
+<a name="ln1641"> </a>
+<a name="ln1642">	/*</a>
+<a name="ln1643">	 * What we want here is v = strncmp(s1, s2, len),</a>
+<a name="ln1644">	 * but ignoring any nulls.</a>
+<a name="ln1645">	 */</a>
+<a name="ln1646">	v = 0;</a>
+<a name="ln1647">	if (0L == flags) { /* normal string: do it fast */</a>
+<a name="ln1648">		while (len-- &gt; 0)</a>
+<a name="ln1649">			if ((v = *b++ - *a++) != '\0')</a>
+<a name="ln1650">				break;</a>
+<a name="ln1651">	}</a>
+<a name="ln1652">	else { /* combine the others */</a>
+<a name="ln1653">		while (len-- &gt; 0) {</a>
+<a name="ln1654">			if (b &gt;= eb) {</a>
+<a name="ln1655">				v = 1;</a>
+<a name="ln1656">				break;</a>
+<a name="ln1657">			}</a>
+<a name="ln1658">			if ((flags &amp; STRING_IGNORE_LOWERCASE) &amp;&amp;</a>
+<a name="ln1659">			    islower(*a)) {</a>
+<a name="ln1660">				if ((v = tolower(*b++) - *a++) != '\0')</a>
+<a name="ln1661">					break;</a>
+<a name="ln1662">			}</a>
+<a name="ln1663">			else if ((flags &amp; STRING_IGNORE_UPPERCASE) &amp;&amp;</a>
+<a name="ln1664">			    isupper(*a)) {</a>
+<a name="ln1665">				if ((v = toupper(*b++) - *a++) != '\0')</a>
+<a name="ln1666">					break;</a>
+<a name="ln1667">			}</a>
+<a name="ln1668">			else if ((flags &amp; STRING_COMPACT_WHITESPACE) &amp;&amp;</a>
+<a name="ln1669">			    isspace(*a)) {</a>
+<a name="ln1670">				a++;</a>
+<a name="ln1671">				if (isspace(*b++)) {</a>
+<a name="ln1672">					if (!isspace(*a))</a>
+<a name="ln1673">						while (b &lt; eb &amp;&amp; isspace(*b))</a>
+<a name="ln1674">							b++;</a>
+<a name="ln1675">				}</a>
+<a name="ln1676">				else {</a>
+<a name="ln1677">					v = 1;</a>
+<a name="ln1678">					break;</a>
+<a name="ln1679">				}</a>
+<a name="ln1680">			}</a>
+<a name="ln1681">			else if ((flags &amp; STRING_COMPACT_OPTIONAL_WHITESPACE) &amp;&amp;</a>
+<a name="ln1682">			    isspace(*a)) {</a>
+<a name="ln1683">				a++;</a>
+<a name="ln1684">				while (b &lt; eb &amp;&amp; isspace(*b))</a>
+<a name="ln1685">					b++;</a>
+<a name="ln1686">			}</a>
+<a name="ln1687">			else {</a>
+<a name="ln1688">				if ((v = *b++ - *a++) != '\0')</a>
+<a name="ln1689">					break;</a>
+<a name="ln1690">			}</a>
+<a name="ln1691">		}</a>
+<a name="ln1692">	}</a>
+<a name="ln1693">	return v;</a>
+<a name="ln1694">}</a>
+<a name="ln1695"> </a>
+<a name="ln1696">private uint64_t</a>
+<a name="ln1697">file_strncmp16(const char *a, const char *b, size_t len, uint32_t flags)</a>
+<a name="ln1698">{</a>
+<a name="ln1699">	/*</a>
+<a name="ln1700">	 * XXX - The 16-bit string compare probably needs to be done</a>
+<a name="ln1701">	 * differently, especially if the flags are to be supported.</a>
+<a name="ln1702">	 * At the moment, I am unsure.</a>
+<a name="ln1703">	 */</a>
+<a name="ln1704">	flags = 0;</a>
+<a name="ln1705">	return file_strncmp(a, b, len, flags);</a>
+<a name="ln1706">}</a>
+<a name="ln1707"> </a>
+<a name="ln1708">private int</a>
+<a name="ln1709">magiccheck(struct magic_set *ms, struct magic *m)</a>
+<a name="ln1710">{</a>
+<a name="ln1711">	uint64_t l = m-&gt;value.q;</a>
+<a name="ln1712">	uint64_t v;</a>
+<a name="ln1713">	float fl, fv;</a>
+<a name="ln1714">	double dl, dv;</a>
+<a name="ln1715">	int matched;</a>
+<a name="ln1716">	union VALUETYPE *p = &amp;ms-&gt;ms_value;</a>
+<a name="ln1717"> </a>
+<a name="ln1718">	switch (m-&gt;type) {</a>
+<a name="ln1719">	case FILE_BYTE:</a>
+<a name="ln1720">		v = p-&gt;b;</a>
+<a name="ln1721">		break;</a>
+<a name="ln1722"> </a>
+<a name="ln1723">	case FILE_SHORT:</a>
+<a name="ln1724">	case FILE_BESHORT:</a>
+<a name="ln1725">	case FILE_LESHORT:</a>
+<a name="ln1726">		v = p-&gt;h;</a>
+<a name="ln1727">		break;</a>
+<a name="ln1728"> </a>
+<a name="ln1729">	case FILE_LONG:</a>
+<a name="ln1730">	case FILE_BELONG:</a>
+<a name="ln1731">	case FILE_LELONG:</a>
+<a name="ln1732">	case FILE_MELONG:</a>
+<a name="ln1733">	case FILE_DATE:</a>
+<a name="ln1734">	case FILE_BEDATE:</a>
+<a name="ln1735">	case FILE_LEDATE:</a>
+<a name="ln1736">	case FILE_MEDATE:</a>
+<a name="ln1737">	case FILE_LDATE:</a>
+<a name="ln1738">	case FILE_BELDATE:</a>
+<a name="ln1739">	case FILE_LELDATE:</a>
+<a name="ln1740">	case FILE_MELDATE:</a>
+<a name="ln1741">		v = p-&gt;l;</a>
+<a name="ln1742">		break;</a>
+<a name="ln1743"> </a>
+<a name="ln1744">	case FILE_QUAD:</a>
+<a name="ln1745">	case FILE_LEQUAD:</a>
+<a name="ln1746">	case FILE_BEQUAD:</a>
+<a name="ln1747">	case FILE_QDATE:</a>
+<a name="ln1748">	case FILE_BEQDATE:</a>
+<a name="ln1749">	case FILE_LEQDATE:</a>
+<a name="ln1750">	case FILE_QLDATE:</a>
+<a name="ln1751">	case FILE_BEQLDATE:</a>
+<a name="ln1752">	case FILE_LEQLDATE:</a>
+<a name="ln1753">	case FILE_QWDATE:</a>
+<a name="ln1754">	case FILE_BEQWDATE:</a>
+<a name="ln1755">	case FILE_LEQWDATE:</a>
+<a name="ln1756">		v = p-&gt;q;</a>
+<a name="ln1757">		break;</a>
+<a name="ln1758"> </a>
+<a name="ln1759">	case FILE_FLOAT:</a>
+<a name="ln1760">	case FILE_BEFLOAT:</a>
+<a name="ln1761">	case FILE_LEFLOAT:</a>
+<a name="ln1762">		fl = m-&gt;value.f;</a>
+<a name="ln1763">		fv = p-&gt;f;</a>
+<a name="ln1764">		switch (m-&gt;reln) {</a>
+<a name="ln1765">		case 'x':</a>
+<a name="ln1766">			matched = 1;</a>
+<a name="ln1767">			break;</a>
+<a name="ln1768"> </a>
+<a name="ln1769">		case '!':</a>
+<a name="ln1770">			matched = fv != fl;</a>
+<a name="ln1771">			break;</a>
+<a name="ln1772"> </a>
+<a name="ln1773">		case '=':</a>
+<a name="ln1774">			matched = fv == fl;</a>
+<a name="ln1775">			break;</a>
+<a name="ln1776"> </a>
+<a name="ln1777">		case '&gt;':</a>
+<a name="ln1778">			matched = fv &gt; fl;</a>
+<a name="ln1779">			break;</a>
+<a name="ln1780"> </a>
+<a name="ln1781">		case '&lt;':</a>
+<a name="ln1782">			matched = fv &lt; fl;</a>
+<a name="ln1783">			break;</a>
+<a name="ln1784"> </a>
+<a name="ln1785">		default:</a>
+<a name="ln1786">			file_magerror(ms, &quot;cannot happen with float: invalid relation `%c'&quot;,</a>
+<a name="ln1787">			    m-&gt;reln);</a>
+<a name="ln1788">			return -1;</a>
+<a name="ln1789">		}</a>
+<a name="ln1790">		return matched;</a>
+<a name="ln1791"> </a>
+<a name="ln1792">	case FILE_DOUBLE:</a>
+<a name="ln1793">	case FILE_BEDOUBLE:</a>
+<a name="ln1794">	case FILE_LEDOUBLE:</a>
+<a name="ln1795">		dl = m-&gt;value.d;</a>
+<a name="ln1796">		dv = p-&gt;d;</a>
+<a name="ln1797">		switch (m-&gt;reln) {</a>
+<a name="ln1798">		case 'x':</a>
+<a name="ln1799">			matched = 1;</a>
+<a name="ln1800">			break;</a>
+<a name="ln1801"> </a>
+<a name="ln1802">		case '!':</a>
+<a name="ln1803">			matched = dv != dl;</a>
+<a name="ln1804">			break;</a>
+<a name="ln1805"> </a>
+<a name="ln1806">		case '=':</a>
+<a name="ln1807">			matched = dv == dl;</a>
+<a name="ln1808">			break;</a>
+<a name="ln1809"> </a>
+<a name="ln1810">		case '&gt;':</a>
+<a name="ln1811">			matched = dv &gt; dl;</a>
+<a name="ln1812">			break;</a>
+<a name="ln1813"> </a>
+<a name="ln1814">		case '&lt;':</a>
+<a name="ln1815">			matched = dv &lt; dl;</a>
+<a name="ln1816">			break;</a>
+<a name="ln1817"> </a>
+<a name="ln1818">		default:</a>
+<a name="ln1819">			file_magerror(ms, &quot;cannot happen with double: invalid relation `%c'&quot;, m-&gt;reln);</a>
+<a name="ln1820">			return -1;</a>
+<a name="ln1821">		}</a>
+<a name="ln1822">		return matched;</a>
+<a name="ln1823"> </a>
+<a name="ln1824">	case FILE_DEFAULT:</a>
+<a name="ln1825">	case FILE_CLEAR:</a>
+<a name="ln1826">		l = 0;</a>
+<a name="ln1827">		v = 0;</a>
+<a name="ln1828">		break;</a>
+<a name="ln1829"> </a>
+<a name="ln1830">	case FILE_STRING:</a>
+<a name="ln1831">	case FILE_PSTRING:</a>
+<a name="ln1832">		l = 0;</a>
+<a name="ln1833">		v = file_strncmp(m-&gt;value.s, p-&gt;s, (size_t)m-&gt;vallen, m-&gt;str_flags);</a>
+<a name="ln1834">		break;</a>
+<a name="ln1835"> </a>
+<a name="ln1836">	case FILE_BESTRING16:</a>
+<a name="ln1837">	case FILE_LESTRING16:</a>
+<a name="ln1838">		l = 0;</a>
+<a name="ln1839">		v = file_strncmp16(m-&gt;value.s, p-&gt;s, (size_t)m-&gt;vallen, m-&gt;str_flags);</a>
+<a name="ln1840">		break;</a>
+<a name="ln1841"> </a>
+<a name="ln1842">	case FILE_SEARCH: { /* search ms-&gt;search.s for the string m-&gt;value.s */</a>
+<a name="ln1843">		size_t slen;</a>
+<a name="ln1844">		size_t idx;</a>
+<a name="ln1845"> </a>
+<a name="ln1846">		if (ms-&gt;search.s == NULL)</a>
+<a name="ln1847">			return 0;</a>
+<a name="ln1848"> </a>
+<a name="ln1849">		slen = MIN(m-&gt;vallen, sizeof(m-&gt;value.s));</a>
+<a name="ln1850">		l = 0;</a>
+<a name="ln1851">		v = 0;</a>
+<a name="ln1852"> </a>
+<a name="ln1853">		for (idx = 0; m-&gt;str_range == 0 || idx &lt; m-&gt;str_range; idx++) {</a>
+<a name="ln1854">			if (slen + idx &gt; ms-&gt;search.s_len)</a>
+<a name="ln1855">				return 0;</a>
+<a name="ln1856"> </a>
+<a name="ln1857">			v = file_strncmp(m-&gt;value.s, ms-&gt;search.s + idx, slen,</a>
+<a name="ln1858">			    m-&gt;str_flags);</a>
+<a name="ln1859">			if (v == 0) {	/* found match */</a>
+<a name="ln1860">				ms-&gt;search.offset += idx;</a>
+<a name="ln1861">				ms-&gt;search.rm_len = ms-&gt;search.s_len - idx;</a>
+<a name="ln1862">				break;</a>
+<a name="ln1863">			}</a>
+<a name="ln1864">		}</a>
+<a name="ln1865">		break;</a>
+<a name="ln1866">	}</a>
+<a name="ln1867">	case FILE_REGEX: {</a>
+<a name="ln1868">		int rc;</a>
+<a name="ln1869">		file_regex_t rx;</a>
+<a name="ln1870">		const char *search;</a>
+<a name="ln1871"> </a>
+<a name="ln1872">		if (ms-&gt;search.s == NULL)</a>
+<a name="ln1873">			return 0;</a>
+<a name="ln1874"> </a>
+<a name="ln1875">		l = 0;</a>
+<a name="ln1876">		rc = file_regcomp(&amp;rx, m-&gt;value.s,</a>
+<a name="ln1877">		    REG_EXTENDED|REG_NEWLINE|</a>
+<a name="ln1878">		    ((m-&gt;str_flags &amp; STRING_IGNORE_CASE) ? REG_ICASE : 0));</a>
+<a name="ln1879">		if (rc) {</a>
+<a name="ln1880">			file_regerror(&amp;rx, rc, ms);</a>
+<a name="ln1881">			v = (uint64_t)-1;</a>
+<a name="ln1882">		} else {</a>
+<a name="ln1883">			regmatch_t pmatch;</a>
+<a name="ln1884">			size_t slen = ms-&gt;search.s_len;</a>
+<a name="ln1885">			char *copy;</a>
+<a name="ln1886">			if (slen != 0) {</a>
+<a name="ln1887">			    copy = CAST(char *, malloc(slen));</a>
+<a name="ln1888">			    if (copy == NULL)  {</a>
+<a name="ln1889">				file_regfree(&amp;rx);</a>
+<a name="ln1890">				file_error(ms, errno,</a>
+<a name="ln1891">				    &quot;can't allocate %&quot; SIZE_T_FORMAT &quot;u bytes&quot;,</a>
+<a name="ln1892">				    slen);</a>
+<a name="ln1893">				return -1;</a>
+<a name="ln1894">			    }</a>
+<a name="ln1895">			    memcpy(copy, ms-&gt;search.s, slen);</a>
+<a name="ln1896">			    copy[--slen] = '\0';</a>
+<a name="ln1897">			    search = copy;</a>
+<a name="ln1898">			} else {</a>
+<a name="ln1899">			    search = CCAST(char *, &quot;&quot;);</a>
+<a name="ln1900">			    copy = NULL;</a>
+<a name="ln1901">			}</a>
+<a name="ln1902">			rc = file_regexec(&amp;rx, (const char *)search,</a>
+<a name="ln1903">			    1, &amp;pmatch, 0);</a>
+<a name="ln1904">			free(copy);</a>
+<a name="ln1905">			switch (rc) {</a>
+<a name="ln1906">			case 0:</a>
+<a name="ln1907">				ms-&gt;search.s += (int)pmatch.rm_so;</a>
+<a name="ln1908">				ms-&gt;search.offset += (size_t)pmatch.rm_so;</a>
+<a name="ln1909">				ms-&gt;search.rm_len =</a>
+<a name="ln1910">				    (size_t)(pmatch.rm_eo - pmatch.rm_so);</a>
+<a name="ln1911">				v = 0;</a>
+<a name="ln1912">				break;</a>
+<a name="ln1913"> </a>
+<a name="ln1914">			case REG_NOMATCH:</a>
+<a name="ln1915">				v = 1;</a>
+<a name="ln1916">				break;</a>
+<a name="ln1917"> </a>
+<a name="ln1918">			default:</a>
+<a name="ln1919">				file_regerror(&amp;rx, rc, ms);</a>
+<a name="ln1920">				v = (uint64_t)-1;</a>
+<a name="ln1921">				break;</a>
+<a name="ln1922">			}</a>
+<a name="ln1923">		}</a>
+<a name="ln1924">		file_regfree(&amp;rx);</a>
+<a name="ln1925">		if (v == (uint64_t)-1)</a>
+<a name="ln1926">			return -1;</a>
+<a name="ln1927">		break;</a>
+<a name="ln1928">	}</a>
+<a name="ln1929">	case FILE_INDIRECT:</a>
+<a name="ln1930">	case FILE_USE:</a>
+<a name="ln1931">	case FILE_NAME:</a>
+<a name="ln1932">		return 1;</a>
+<a name="ln1933">	case FILE_DER:</a>
+<a name="ln1934">		matched = der_cmp(ms, m);</a>
+<a name="ln1935">		if (matched == -1) {</a>
+<a name="ln1936">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0) {</a>
+<a name="ln1937">				(void) fprintf(stderr,</a>
+<a name="ln1938">				    &quot;EOF comparing DER entries&quot;);</a>
+<a name="ln1939">			}</a>
+<a name="ln1940">			return 0;</a>
+<a name="ln1941">		}</a>
+<a name="ln1942">		return matched;</a>
+<a name="ln1943">	default:</a>
+<a name="ln1944">		file_magerror(ms, &quot;invalid type %d in magiccheck()&quot;, m-&gt;type);</a>
+<a name="ln1945">		return -1;</a>
+<a name="ln1946">	}</a>
+<a name="ln1947"> </a>
+<a name="ln1948">	v = file_signextend(ms, m, v);</a>
+<a name="ln1949"> </a>
+<a name="ln1950">	switch (m-&gt;reln) {</a>
+<a name="ln1951">	case 'x':</a>
+<a name="ln1952">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1953">			(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT</a>
+<a name="ln1954">			    &quot;u == *any* = 1\n&quot;, (unsigned long long)v);</a>
+<a name="ln1955">		matched = 1;</a>
+<a name="ln1956">		break;</a>
+<a name="ln1957"> </a>
+<a name="ln1958">	case '!':</a>
+<a name="ln1959">		matched = v != l;</a>
+<a name="ln1960">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1961">			(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT &quot;u != %&quot;</a>
+<a name="ln1962">			    INT64_T_FORMAT &quot;u = %d\n&quot;, (unsigned long long)v,</a>
+<a name="ln1963">			    (unsigned long long)l, matched);</a>
+<a name="ln1964">		break;</a>
+<a name="ln1965"> </a>
+<a name="ln1966">	case '=':</a>
+<a name="ln1967">		matched = v == l;</a>
+<a name="ln1968">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1969">			(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT &quot;u == %&quot;</a>
+<a name="ln1970">			    INT64_T_FORMAT &quot;u = %d\n&quot;, (unsigned long long)v,</a>
+<a name="ln1971">			    (unsigned long long)l, matched);</a>
+<a name="ln1972">		break;</a>
+<a name="ln1973"> </a>
+<a name="ln1974">	case '&gt;':</a>
+<a name="ln1975">		if (m-&gt;flag &amp; UNSIGNED) {</a>
+<a name="ln1976">			matched = v &gt; l;</a>
+<a name="ln1977">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1978">				(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT</a>
+<a name="ln1979">				    &quot;u &gt; %&quot; INT64_T_FORMAT &quot;u = %d\n&quot;,</a>
+<a name="ln1980">				    (unsigned long long)v,</a>
+<a name="ln1981">				    (unsigned long long)l, matched);</a>
+<a name="ln1982">		}</a>
+<a name="ln1983">		else {</a>
+<a name="ln1984">			matched = (int64_t) v &gt; (int64_t) l;</a>
+<a name="ln1985">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1986">				(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT</a>
+<a name="ln1987">				    &quot;d &gt; %&quot; INT64_T_FORMAT &quot;d = %d\n&quot;,</a>
+<a name="ln1988">				    (long long)v, (long long)l, matched);</a>
+<a name="ln1989">		}</a>
+<a name="ln1990">		break;</a>
+<a name="ln1991"> </a>
+<a name="ln1992">	case '&lt;':</a>
+<a name="ln1993">		if (m-&gt;flag &amp; UNSIGNED) {</a>
+<a name="ln1994">			matched = v &lt; l;</a>
+<a name="ln1995">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln1996">				(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT</a>
+<a name="ln1997">				    &quot;u &lt; %&quot; INT64_T_FORMAT &quot;u = %d\n&quot;,</a>
+<a name="ln1998">				    (unsigned long long)v,</a>
+<a name="ln1999">				    (unsigned long long)l, matched);</a>
+<a name="ln2000">		}</a>
+<a name="ln2001">		else {</a>
+<a name="ln2002">			matched = (int64_t) v &lt; (int64_t) l;</a>
+<a name="ln2003">			if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln2004">				(void) fprintf(stderr, &quot;%&quot; INT64_T_FORMAT</a>
+<a name="ln2005">				    &quot;d &lt; %&quot; INT64_T_FORMAT &quot;d = %d\n&quot;,</a>
+<a name="ln2006">				     (long long)v, (long long)l, matched);</a>
+<a name="ln2007">		}</a>
+<a name="ln2008">		break;</a>
+<a name="ln2009"> </a>
+<a name="ln2010">	case '&amp;':</a>
+<a name="ln2011">		matched = (v &amp; l) == l;</a>
+<a name="ln2012">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln2013">			(void) fprintf(stderr, &quot;((%&quot; INT64_T_FORMAT &quot;x &amp; %&quot;</a>
+<a name="ln2014">			    INT64_T_FORMAT &quot;x) == %&quot; INT64_T_FORMAT</a>
+<a name="ln2015">			    &quot;x) = %d\n&quot;, (unsigned long long)v,</a>
+<a name="ln2016">			    (unsigned long long)l, (unsigned long long)l,</a>
+<a name="ln2017">			    matched);</a>
+<a name="ln2018">		break;</a>
+<a name="ln2019"> </a>
+<a name="ln2020">	case '^':</a>
+<a name="ln2021">		matched = (v &amp; l) != l;</a>
+<a name="ln2022">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) != 0)</a>
+<a name="ln2023">			(void) fprintf(stderr, &quot;((%&quot; INT64_T_FORMAT &quot;x &amp; %&quot;</a>
+<a name="ln2024">			    INT64_T_FORMAT &quot;x) != %&quot; INT64_T_FORMAT</a>
+<a name="ln2025">			    &quot;x) = %d\n&quot;, (unsigned long long)v,</a>
+<a name="ln2026">			    (unsigned long long)l, (unsigned long long)l,</a>
+<a name="ln2027">			    matched);</a>
+<a name="ln2028">		break;</a>
+<a name="ln2029"> </a>
+<a name="ln2030">	default:</a>
+<a name="ln2031">		file_magerror(ms, &quot;cannot happen: invalid relation `%c'&quot;,</a>
+<a name="ln2032">		    m-&gt;reln);</a>
+<a name="ln2033">		return -1;</a>
+<a name="ln2034">	}</a>
+<a name="ln2035"> </a>
+<a name="ln2036">	return matched;</a>
+<a name="ln2037">}</a>
+<a name="ln2038"> </a>
+<a name="ln2039">private int</a>
+<a name="ln2040">handle_annotation(struct magic_set *ms, struct magic *m, int firstline)</a>
+<a name="ln2041">{</a>
+<a name="ln2042">	if ((ms-&gt;flags &amp; MAGIC_APPLE) &amp;&amp; m-&gt;apple[0]) {</a>
+<a name="ln2043">		if (!firstline &amp;&amp; file_printf(ms, &quot;\n- &quot;) == -1)</a>
+<a name="ln2044">			return -1;</a>
+<a name="ln2045">		if (file_printf(ms, &quot;%.8s&quot;, m-&gt;apple) == -1)</a>
+<a name="ln2046">			return -1;</a>
+<a name="ln2047">		return 1;</a>
+<a name="ln2048">	}</a>
+<a name="ln2049">	if ((ms-&gt;flags &amp; MAGIC_EXTENSION) &amp;&amp; m-&gt;ext[0]) {</a>
+<a name="ln2050">		if (!firstline &amp;&amp; file_printf(ms, &quot;\n- &quot;) == -1)</a>
+<a name="ln2051">			return -1;</a>
+<a name="ln2052">		if (file_printf(ms, &quot;%s&quot;, m-&gt;ext) == -1)</a>
+<a name="ln2053">			return -1;</a>
+<a name="ln2054">		return 1;</a>
+<a name="ln2055">	}</a>
+<a name="ln2056">	if ((ms-&gt;flags &amp; MAGIC_MIME_TYPE) &amp;&amp; m-&gt;mimetype[0]) {</a>
+<a name="ln2057">		if (!firstline &amp;&amp; file_printf(ms, &quot;\n- &quot;) == -1)</a>
+<a name="ln2058">			return -1;</a>
+<a name="ln2059">		if (file_printf(ms, &quot;%s&quot;, m-&gt;mimetype) == -1)</a>
+<a name="ln2060">			return -1;</a>
+<a name="ln2061">		return 1;</a>
+<a name="ln2062">	}</a>
+<a name="ln2063">	return 0;</a>
+<a name="ln2064">}</a>
+<a name="ln2065"> </a>
+<a name="ln2066">private int</a>
+<a name="ln2067">print_sep(struct magic_set *ms, int firstline)</a>
+<a name="ln2068">{</a>
+<a name="ln2069">//	if (ms-&gt;flags &amp; MAGIC_NODESC)</a>
+<a name="ln2070">//		return 0;</a>
+<a name="ln2071">	if (firstline)</a>
+<a name="ln2072">		return 0;</a>
+<a name="ln2073">	/*</a>
+<a name="ln2074">	 * we found another match</a>
+<a name="ln2075">	 * put a newline and '-' to do some simple formatting</a>
+<a name="ln2076">	 */</a>
+<a name="ln2077">	return file_printf(ms, &quot;\n- &quot;);</a>
+<a name="ln2078">}</a>
+</code></pre>
+<div class="balloon" rel="1704"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v763/" target="_blank">V763</a> Parameter 'flags' is always rewritten in function body before being used.</p></div>
+<div class="balloon" rel="771"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 771, 778</p></div>
+<div class="balloon" rel="784"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 784, 790</p></div>
+<div class="balloon" rel="1004"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: (float) m-&gt;_u._mask == 0. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</p></div>
+<div class="balloon" rel="1011"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: (double) m-&gt;_u._mask == 0. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</p></div>
+<div class="balloon" rel="1770"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: fv != fl. It's probably better to use a comparison with defined precision: fabs(A - B) &gt; Epsilon.</p></div>
+<div class="balloon" rel="1774"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: fv == fl. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</p></div>
+<div class="balloon" rel="1803"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: dv != dl. It's probably better to use a comparison with defined precision: fabs(A - B) &gt; Epsilon.</p></div>
+<div class="balloon" rel="1807"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v550/" target="_blank">V550</a> An odd precise comparison: dv == dl. It's probably better to use a comparison with defined precision: fabs(A - B) &lt; Epsilon.</p></div>
+<div class="balloon" rel="1171"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v576/" target="_blank">V576</a> Incorrect format. Consider checking the fourth actual argument of the 'fprintf' function. The SIGNED integer type argument is expected.</p></div>
+<div class="balloon" rel="1580"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'file_printf' function. Under certain conditions the pointer can be null.</p></div>
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

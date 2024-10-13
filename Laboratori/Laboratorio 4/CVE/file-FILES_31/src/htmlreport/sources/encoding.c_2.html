@@ -1,0 +1,571 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>encoding.c</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.5.1.min.js"></script>
+</head>
+<body>
+<pre><code class = "cpp">
+<a name="ln1">// This is a personal academic project. Dear PVS-Studio, please check it.</a>
+<a name="ln2">// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: http://www.viva64.com</a>
+<a name="ln3">/*</a>
+<a name="ln4"> * Copyright (c) Ian F. Darwin 1986-1995.</a>
+<a name="ln5"> * Software written by Ian F. Darwin and others;</a>
+<a name="ln6"> * maintained 1995-present by Christos Zoulas and others.</a>
+<a name="ln7"> *</a>
+<a name="ln8"> * Redistribution and use in source and binary forms, with or without</a>
+<a name="ln9"> * modification, are permitted provided that the following conditions</a>
+<a name="ln10"> * are met:</a>
+<a name="ln11"> * 1. Redistributions of source code must retain the above copyright</a>
+<a name="ln12"> *    notice immediately at the beginning of the file, without modification,</a>
+<a name="ln13"> *    this list of conditions, and the following disclaimer.</a>
+<a name="ln14"> * 2. Redistributions in binary form must reproduce the above copyright</a>
+<a name="ln15"> *    notice, this list of conditions and the following disclaimer in the</a>
+<a name="ln16"> *    documentation and/or other materials provided with the distribution.</a>
+<a name="ln17"> *</a>
+<a name="ln18"> * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND</a>
+<a name="ln19"> * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE</a>
+<a name="ln20"> * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE</a>
+<a name="ln21"> * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR</a>
+<a name="ln22"> * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL</a>
+<a name="ln23"> * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS</a>
+<a name="ln24"> * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)</a>
+<a name="ln25"> * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT</a>
+<a name="ln26"> * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY</a>
+<a name="ln27"> * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF</a>
+<a name="ln28"> * SUCH DAMAGE.</a>
+<a name="ln29"> */</a>
+<a name="ln30">/*</a>
+<a name="ln31"> * Encoding -- determine the character encoding of a text file.</a>
+<a name="ln32"> *</a>
+<a name="ln33"> * Joerg Wunsch &lt;joerg@freebsd.org&gt; wrote the original support for 8-bit</a>
+<a name="ln34"> * international characters.</a>
+<a name="ln35"> */</a>
+<a name="ln36"> </a>
+<a name="ln37">#include &quot;file.h&quot;</a>
+<a name="ln38"> </a>
+<a name="ln39">#ifndef	lint</a>
+<a name="ln40">FILE_RCSID(&quot;@(#)$File: encoding.c,v 1.12 2015/06/03 19:51:27 christos Exp $&quot;)</a>
+<a name="ln41">#endif	/* lint */</a>
+<a name="ln42"> </a>
+<a name="ln43">#include &quot;magic.h&quot;</a>
+<a name="ln44">#include &lt;string.h&gt;</a>
+<a name="ln45">#include &lt;memory.h&gt;</a>
+<a name="ln46">#include &lt;stdlib.h&gt;</a>
+<a name="ln47"> </a>
+<a name="ln48"> </a>
+<a name="ln49">private int looks_ascii(const unsigned char *, size_t, unichar *, size_t *);</a>
+<a name="ln50">private int looks_utf8_with_BOM(const unsigned char *, size_t, unichar *,</a>
+<a name="ln51">    size_t *);</a>
+<a name="ln52">private int looks_utf7(const unsigned char *, size_t, unichar *, size_t *);</a>
+<a name="ln53">private int looks_ucs16(const unsigned char *, size_t, unichar *, size_t *);</a>
+<a name="ln54">private int looks_latin1(const unsigned char *, size_t, unichar *, size_t *);</a>
+<a name="ln55">private int looks_extended(const unsigned char *, size_t, unichar *, size_t *);</a>
+<a name="ln56">private void from_ebcdic(const unsigned char *, size_t, unsigned char *);</a>
+<a name="ln57"> </a>
+<a name="ln58">#ifdef DEBUG_ENCODING</a>
+<a name="ln59">#define DPRINTF(a) printf a</a>
+<a name="ln60">#else</a>
+<a name="ln61">#define DPRINTF(a)</a>
+<a name="ln62">#endif</a>
+<a name="ln63"> </a>
+<a name="ln64">/*</a>
+<a name="ln65"> * Try to determine whether text is in some character code we can</a>
+<a name="ln66"> * identify.  Each of these tests, if it succeeds, will leave</a>
+<a name="ln67"> * the text converted into one-unichar-per-character Unicode in</a>
+<a name="ln68"> * ubuf, and the number of characters converted in ulen.</a>
+<a name="ln69"> */</a>
+<a name="ln70">protected int</a>
+<a name="ln71">file_encoding(struct magic_set *ms, const unsigned char *buf, size_t nbytes, unichar **ubuf, size_t *ulen, const char **code, const char **code_mime, const char **type)</a>
+<a name="ln72">{</a>
+<a name="ln73">	size_t mlen;</a>
+<a name="ln74">	int rv = 1, ucs_type;</a>
+<a name="ln75">	unsigned char *nbuf = NULL;</a>
+<a name="ln76"> </a>
+<a name="ln77">	*type = &quot;text&quot;;</a>
+<a name="ln78">	*ulen = 0;</a>
+<a name="ln79">	*code = &quot;unknown&quot;;</a>
+<a name="ln80">	*code_mime = &quot;binary&quot;;</a>
+<a name="ln81"> </a>
+<a name="ln82">	mlen = (nbytes + 1) * sizeof((*ubuf)[0]);</a>
+<a name="ln83">	if ((*ubuf = CAST(unichar *, calloc((size_t)1, mlen))) == NULL) {</a>
+<a name="ln84">		file_oomem(ms, mlen);</a>
+<a name="ln85">		goto done;</a>
+<a name="ln86">	}</a>
+<a name="ln87">	mlen = (nbytes + 1) * sizeof(nbuf[0]);</a>
+<a name="ln88">	if ((nbuf = CAST(unsigned char *, calloc((size_t)1, mlen))) == NULL) {</a>
+<a name="ln89">		file_oomem(ms, mlen);</a>
+<a name="ln90">		goto done;</a>
+<a name="ln91">	}</a>
+<a name="ln92"> </a>
+<a name="ln93">	if (looks_ascii(buf, nbytes, *ubuf, ulen)) {</a>
+<a name="ln94">		if (looks_utf7(buf, nbytes, *ubuf, ulen) &gt; 0) {</a>
+<a name="ln95">			DPRINTF((&quot;utf-7 %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln96">			*code = &quot;UTF-7 Unicode&quot;;</a>
+<a name="ln97">			*code_mime = &quot;utf-7&quot;;</a>
+<a name="ln98">		} else {</a>
+<a name="ln99">			DPRINTF((&quot;ascii %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln100">			*code = &quot;ASCII&quot;;</a>
+<a name="ln101">			*code_mime = &quot;us-ascii&quot;;</a>
+<a name="ln102">		}</a>
+<a name="ln103">	} else if (looks_utf8_with_BOM(buf, nbytes, *ubuf, ulen) &gt; 0) {</a>
+<a name="ln104">		DPRINTF((&quot;utf8/bom %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln105">		*code = &quot;UTF-8 Unicode (with BOM)&quot;;</a>
+<a name="ln106">		*code_mime = &quot;utf-8&quot;;</a>
+<a name="ln107">	} else if (file_looks_utf8(buf, nbytes, *ubuf, ulen) &gt; 1) {</a>
+<a name="ln108">		DPRINTF((&quot;utf8 %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln109">		*code = &quot;UTF-8 Unicode&quot;;</a>
+<a name="ln110">		*code_mime = &quot;utf-8&quot;;</a>
+<a name="ln111">	} else if ((ucs_type = looks_ucs16(buf, nbytes, *ubuf, ulen)) != 0) {</a>
+<a name="ln112">		if (ucs_type == 1) {</a>
+<a name="ln113">			*code = &quot;Little-endian UTF-16 Unicode&quot;;</a>
+<a name="ln114">			*code_mime = &quot;utf-16le&quot;;</a>
+<a name="ln115">		} else {</a>
+<a name="ln116">			*code = &quot;Big-endian UTF-16 Unicode&quot;;</a>
+<a name="ln117">			*code_mime = &quot;utf-16be&quot;;</a>
+<a name="ln118">		}</a>
+<a name="ln119">		DPRINTF((&quot;ucs16 %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln120">	} else if (looks_latin1(buf, nbytes, *ubuf, ulen)) {</a>
+<a name="ln121">		DPRINTF((&quot;latin1 %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln122">		*code = &quot;ISO-8859&quot;;</a>
+<a name="ln123">		*code_mime = &quot;iso-8859-1&quot;;</a>
+<a name="ln124">	} else if (looks_extended(buf, nbytes, *ubuf, ulen)) {</a>
+<a name="ln125">		DPRINTF((&quot;extended %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln126">		*code = &quot;Non-ISO extended-ASCII&quot;;</a>
+<a name="ln127">		*code_mime = &quot;unknown-8bit&quot;;</a>
+<a name="ln128">	} else {</a>
+<a name="ln129">		from_ebcdic(buf, nbytes, nbuf);</a>
+<a name="ln130"> </a>
+<a name="ln131">		if (looks_ascii(nbuf, nbytes, *ubuf, ulen)) {</a>
+<a name="ln132">			DPRINTF((&quot;ebcdic %&quot; SIZE_T_FORMAT &quot;u\n&quot;, *ulen));</a>
+<a name="ln133">			*code = &quot;EBCDIC&quot;;</a>
+<a name="ln134">			*code_mime = &quot;ebcdic&quot;;</a>
+<a name="ln135">		} else if (looks_latin1(nbuf, nbytes, *ubuf, ulen)) {</a>
+<a name="ln136">			DPRINTF((&quot;ebcdic/international %&quot; SIZE_T_FORMAT &quot;u\n&quot;,</a>
+<a name="ln137">			    *ulen));</a>
+<a name="ln138">			*code = &quot;International EBCDIC&quot;;</a>
+<a name="ln139">			*code_mime = &quot;ebcdic&quot;;</a>
+<a name="ln140">		} else { /* Doesn't look like text at all */</a>
+<a name="ln141">			DPRINTF((&quot;binary\n&quot;));</a>
+<a name="ln142">			rv = 0;</a>
+<a name="ln143">			*type = &quot;binary&quot;;</a>
+<a name="ln144">		}</a>
+<a name="ln145">	}</a>
+<a name="ln146"> </a>
+<a name="ln147"> done:</a>
+<a name="ln148">	free(nbuf);</a>
+<a name="ln149"> </a>
+<a name="ln150">	return rv;</a>
+<a name="ln151">}</a>
+<a name="ln152"> </a>
+<a name="ln153">/*</a>
+<a name="ln154"> * This table reflects a particular philosophy about what constitutes</a>
+<a name="ln155"> * &quot;text,&quot; and there is room for disagreement about it.</a>
+<a name="ln156"> *</a>
+<a name="ln157"> * Version 3.31 of the file command considered a file to be ASCII if</a>
+<a name="ln158"> * each of its characters was approved by either the isascii() or</a>
+<a name="ln159"> * isalpha() function.  On most systems, this would mean that any</a>
+<a name="ln160"> * file consisting only of characters in the range 0x00 ... 0x7F</a>
+<a name="ln161"> * would be called ASCII text, but many systems might reasonably</a>
+<a name="ln162"> * consider some characters outside this range to be alphabetic,</a>
+<a name="ln163"> * so the file command would call such characters ASCII.  It might</a>
+<a name="ln164"> * have been more accurate to call this &quot;considered textual on the</a>
+<a name="ln165"> * local system&quot; than &quot;ASCII.&quot;</a>
+<a name="ln166"> *</a>
+<a name="ln167"> * It considered a file to be &quot;International language text&quot; if each</a>
+<a name="ln168"> * of its characters was either an ASCII printing character (according</a>
+<a name="ln169"> * to the real ASCII standard, not the above test), a character in</a>
+<a name="ln170"> * the range 0x80 ... 0xFF, or one of the following control characters:</a>
+<a name="ln171"> * backspace, tab, line feed, vertical tab, form feed, carriage return,</a>
+<a name="ln172"> * escape.  No attempt was made to determine the language in which files</a>
+<a name="ln173"> * of this type were written.</a>
+<a name="ln174"> *</a>
+<a name="ln175"> *</a>
+<a name="ln176"> * The table below considers a file to be ASCII if all of its characters</a>
+<a name="ln177"> * are either ASCII printing characters (again, according to the X3.4</a>
+<a name="ln178"> * standard, not isascii()) or any of the following controls: bell,</a>
+<a name="ln179"> * backspace, tab, line feed, form feed, carriage return, esc, nextline.</a>
+<a name="ln180"> *</a>
+<a name="ln181"> * I include bell because some programs (particularly shell scripts)</a>
+<a name="ln182"> * use it literally, even though it is rare in normal text.  I exclude</a>
+<a name="ln183"> * vertical tab because it never seems to be used in real text.  I also</a>
+<a name="ln184"> * include, with hesitation, the X3.64/ECMA-43 control nextline (0x85),</a>
+<a name="ln185"> * because that's what the dd EBCDIC-&gt;ASCII table maps the EBCDIC newline</a>
+<a name="ln186"> * character to.  It might be more appropriate to include it in the 8859</a>
+<a name="ln187"> * set instead of the ASCII set, but it's got to be included in *something*</a>
+<a name="ln188"> * we recognize or EBCDIC files aren't going to be considered textual.</a>
+<a name="ln189"> * Some old Unix source files use SO/SI (^N/^O) to shift between Greek</a>
+<a name="ln190"> * and Latin characters, so these should possibly be allowed.  But they</a>
+<a name="ln191"> * make a real mess on VT100-style displays if they're not paired properly,</a>
+<a name="ln192"> * so we are probably better off not calling them text.</a>
+<a name="ln193"> *</a>
+<a name="ln194"> * A file is considered to be ISO-8859 text if its characters are all</a>
+<a name="ln195"> * either ASCII, according to the above definition, or printing characters</a>
+<a name="ln196"> * from the ISO-8859 8-bit extension, characters 0xA0 ... 0xFF.</a>
+<a name="ln197"> *</a>
+<a name="ln198"> * Finally, a file is considered to be international text from some other</a>
+<a name="ln199"> * character code if its characters are all either ISO-8859 (according to</a>
+<a name="ln200"> * the above definition) or characters in the range 0x80 ... 0x9F, which</a>
+<a name="ln201"> * ISO-8859 considers to be control characters but the IBM PC and Macintosh</a>
+<a name="ln202"> * consider to be printing characters.</a>
+<a name="ln203"> */</a>
+<a name="ln204"> </a>
+<a name="ln205">#define F 0   /* character never appears in text */</a>
+<a name="ln206">#define T 1   /* character appears in plain ASCII text */</a>
+<a name="ln207">#define I 2   /* character appears in ISO-8859 text */</a>
+<a name="ln208">#define X 3   /* character appears in non-ISO extended ASCII (Mac, IBM PC) */</a>
+<a name="ln209"> </a>
+<a name="ln210">private char text_chars[256] = {</a>
+<a name="ln211">	/*                  BEL BS HT LF VT FF CR    */</a>
+<a name="ln212">	F, F, F, F, F, F, F, T, T, T, T, T, T, T, F, F,  /* 0x0X */</a>
+<a name="ln213">	/*                              ESC          */</a>
+<a name="ln214">	F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F,  /* 0x1X */</a>
+<a name="ln215">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,  /* 0x2X */</a>
+<a name="ln216">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,  /* 0x3X */</a>
+<a name="ln217">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,  /* 0x4X */</a>
+<a name="ln218">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,  /* 0x5X */</a>
+<a name="ln219">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,  /* 0x6X */</a>
+<a name="ln220">	T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F,  /* 0x7X */</a>
+<a name="ln221">	/*            NEL                            */</a>
+<a name="ln222">	X, X, X, X, X, T, X, X, X, X, X, X, X, X, X, X,  /* 0x8X */</a>
+<a name="ln223">	X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, X,  /* 0x9X */</a>
+<a name="ln224">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I,  /* 0xaX */</a>
+<a name="ln225">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I,  /* 0xbX */</a>
+<a name="ln226">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I,  /* 0xcX */</a>
+<a name="ln227">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I,  /* 0xdX */</a>
+<a name="ln228">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I,  /* 0xeX */</a>
+<a name="ln229">	I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I   /* 0xfX */</a>
+<a name="ln230">};</a>
+<a name="ln231"> </a>
+<a name="ln232">private int</a>
+<a name="ln233">looks_ascii(const unsigned char *buf, size_t nbytes, unichar *ubuf,</a>
+<a name="ln234">    size_t *ulen)</a>
+<a name="ln235">{</a>
+<a name="ln236">	size_t i;</a>
+<a name="ln237"> </a>
+<a name="ln238">	*ulen = 0;</a>
+<a name="ln239"> </a>
+<a name="ln240">	for (i = 0; i &lt; nbytes; i++) {</a>
+<a name="ln241">		int t = text_chars[buf[i]];</a>
+<a name="ln242"> </a>
+<a name="ln243">		if (t != T)</a>
+<a name="ln244">			return 0;</a>
+<a name="ln245"> </a>
+<a name="ln246">		ubuf[(*ulen)++] = buf[i];</a>
+<a name="ln247">	}</a>
+<a name="ln248"> </a>
+<a name="ln249">	return 1;</a>
+<a name="ln250">}</a>
+<a name="ln251"> </a>
+<a name="ln252">private int</a>
+<a name="ln253">looks_latin1(const unsigned char *buf, size_t nbytes, unichar *ubuf, size_t *ulen)</a>
+<a name="ln254">{</a>
+<a name="ln255">	size_t i;</a>
+<a name="ln256"> </a>
+<a name="ln257">	*ulen = 0;</a>
+<a name="ln258"> </a>
+<a name="ln259">	for (i = 0; i &lt; nbytes; i++) {</a>
+<a name="ln260">		int t = text_chars[buf[i]];</a>
+<a name="ln261"> </a>
+<a name="ln262">		if (t != T &amp;&amp; t != I)</a>
+<a name="ln263">			return 0;</a>
+<a name="ln264"> </a>
+<a name="ln265">		ubuf[(*ulen)++] = buf[i];</a>
+<a name="ln266">	}</a>
+<a name="ln267"> </a>
+<a name="ln268">	return 1;</a>
+<a name="ln269">}</a>
+<a name="ln270"> </a>
+<a name="ln271">private int</a>
+<a name="ln272">looks_extended(const unsigned char *buf, size_t nbytes, unichar *ubuf,</a>
+<a name="ln273">    size_t *ulen)</a>
+<a name="ln274">{</a>
+<a name="ln275">	size_t i;</a>
+<a name="ln276"> </a>
+<a name="ln277">	*ulen = 0;</a>
+<a name="ln278"> </a>
+<a name="ln279">	for (i = 0; i &lt; nbytes; i++) {</a>
+<a name="ln280">		int t = text_chars[buf[i]];</a>
+<a name="ln281"> </a>
+<a name="ln282">		if (t != T &amp;&amp; t != I &amp;&amp; t != X)</a>
+<a name="ln283">			return 0;</a>
+<a name="ln284"> </a>
+<a name="ln285">		ubuf[(*ulen)++] = buf[i];</a>
+<a name="ln286">	}</a>
+<a name="ln287"> </a>
+<a name="ln288">	return 1;</a>
+<a name="ln289">}</a>
+<a name="ln290"> </a>
+<a name="ln291">/*</a>
+<a name="ln292"> * Decide whether some text looks like UTF-8. Returns:</a>
+<a name="ln293"> *</a>
+<a name="ln294"> *     -1: invalid UTF-8</a>
+<a name="ln295"> *      0: uses odd control characters, so doesn't look like text</a>
+<a name="ln296"> *      1: 7-bit text</a>
+<a name="ln297"> *      2: definitely UTF-8 text (valid high-bit set bytes)</a>
+<a name="ln298"> *</a>
+<a name="ln299"> * If ubuf is non-NULL on entry, text is decoded into ubuf, *ulen;</a>
+<a name="ln300"> * ubuf must be big enough!</a>
+<a name="ln301"> */</a>
+<a name="ln302">protected int</a>
+<a name="ln303">file_looks_utf8(const unsigned char *buf, size_t nbytes, unichar *ubuf, size_t *ulen)</a>
+<a name="ln304">{</a>
+<a name="ln305">	size_t i;</a>
+<a name="ln306">	int n;</a>
+<a name="ln307">	unichar c;</a>
+<a name="ln308">	int gotone = 0, ctrl = 0;</a>
+<a name="ln309"> </a>
+<a name="ln310">	if (ubuf)</a>
+<a name="ln311">		*ulen = 0;</a>
+<a name="ln312"> </a>
+<a name="ln313">	for (i = 0; i &lt; nbytes; i++) {</a>
+<a name="ln314">		if ((buf[i] &amp; 0x80) == 0) {	   /* 0xxxxxxx is plain ASCII */</a>
+<a name="ln315">			/*</a>
+<a name="ln316">			 * Even if the whole file is valid UTF-8 sequences,</a>
+<a name="ln317">			 * still reject it if it uses weird control characters.</a>
+<a name="ln318">			 */</a>
+<a name="ln319"> </a>
+<a name="ln320">			if (text_chars[buf[i]] != T)</a>
+<a name="ln321">				ctrl = 1;</a>
+<a name="ln322"> </a>
+<a name="ln323">			if (ubuf)</a>
+<a name="ln324">				ubuf[(*ulen)++] = buf[i];</a>
+<a name="ln325">		} else if ((buf[i] &amp; 0x40) == 0) { /* 10xxxxxx never 1st byte */</a>
+<a name="ln326">			return -1;</a>
+<a name="ln327">		} else {			   /* 11xxxxxx begins UTF-8 */</a>
+<a name="ln328">			int following;</a>
+<a name="ln329"> </a>
+<a name="ln330">			if ((buf[i] &amp; 0x20) == 0) {		/* 110xxxxx */</a>
+<a name="ln331">				c = buf[i] &amp; 0x1f;</a>
+<a name="ln332">				following = 1;</a>
+<a name="ln333">			} else if ((buf[i] &amp; 0x10) == 0) {	/* 1110xxxx */</a>
+<a name="ln334">				c = buf[i] &amp; 0x0f;</a>
+<a name="ln335">				following = 2;</a>
+<a name="ln336">			} else if ((buf[i] &amp; 0x08) == 0) {	/* 11110xxx */</a>
+<a name="ln337">				c = buf[i] &amp; 0x07;</a>
+<a name="ln338">				following = 3;</a>
+<a name="ln339">			} else if ((buf[i] &amp; 0x04) == 0) {	/* 111110xx */</a>
+<a name="ln340">				c = buf[i] &amp; 0x03;</a>
+<a name="ln341">				following = 4;</a>
+<a name="ln342">			} else if ((buf[i] &amp; 0x02) == 0) {	/* 1111110x */</a>
+<a name="ln343">				c = buf[i] &amp; 0x01;</a>
+<a name="ln344">				following = 5;</a>
+<a name="ln345">			} else</a>
+<a name="ln346">				return -1;</a>
+<a name="ln347"> </a>
+<a name="ln348">			for (n = 0; n &lt; following; n++) {</a>
+<a name="ln349">				i++;</a>
+<a name="ln350">				if (i &gt;= nbytes)</a>
+<a name="ln351">					goto done;</a>
+<a name="ln352"> </a>
+<a name="ln353">				if ((buf[i] &amp; 0x80) == 0 || (buf[i] &amp; 0x40))</a>
+<a name="ln354">					return -1;</a>
+<a name="ln355"> </a>
+<a name="ln356">				c = (c &lt;&lt; 6) + (buf[i] &amp; 0x3f);</a>
+<a name="ln357">			}</a>
+<a name="ln358"> </a>
+<a name="ln359">			if (ubuf)</a>
+<a name="ln360">				ubuf[(*ulen)++] = c;</a>
+<a name="ln361">			gotone = 1;</a>
+<a name="ln362">		}</a>
+<a name="ln363">	}</a>
+<a name="ln364">done:</a>
+<a name="ln365">	return ctrl ? 0 : (gotone ? 2 : 1);</a>
+<a name="ln366">}</a>
+<a name="ln367"> </a>
+<a name="ln368">/*</a>
+<a name="ln369"> * Decide whether some text looks like UTF-8 with BOM. If there is no</a>
+<a name="ln370"> * BOM, return -1; otherwise return the result of looks_utf8 on the</a>
+<a name="ln371"> * rest of the text.</a>
+<a name="ln372"> */</a>
+<a name="ln373">private int</a>
+<a name="ln374">looks_utf8_with_BOM(const unsigned char *buf, size_t nbytes, unichar *ubuf,</a>
+<a name="ln375">    size_t *ulen)</a>
+<a name="ln376">{</a>
+<a name="ln377">	if (nbytes &gt; 3 &amp;&amp; buf[0] == 0xef &amp;&amp; buf[1] == 0xbb &amp;&amp; buf[2] == 0xbf)</a>
+<a name="ln378">		return file_looks_utf8(buf + 3, nbytes - 3, ubuf, ulen);</a>
+<a name="ln379">	else</a>
+<a name="ln380">		return -1;</a>
+<a name="ln381">}</a>
+<a name="ln382"> </a>
+<a name="ln383">private int</a>
+<a name="ln384">looks_utf7(const unsigned char *buf, size_t nbytes, unichar *ubuf, size_t *ulen)</a>
+<a name="ln385">{</a>
+<a name="ln386">	if (nbytes &gt; 4 &amp;&amp; buf[0] == '+' &amp;&amp; buf[1] == '/' &amp;&amp; buf[2] == 'v')</a>
+<a name="ln387">		switch (buf[3]) {</a>
+<a name="ln388">		case '8':</a>
+<a name="ln389">		case '9':</a>
+<a name="ln390">		case '+':</a>
+<a name="ln391">		case '/':</a>
+<a name="ln392">			if (ubuf)</a>
+<a name="ln393">				*ulen = 0;</a>
+<a name="ln394">			return 1;</a>
+<a name="ln395">		default:</a>
+<a name="ln396">			return -1;</a>
+<a name="ln397">		}</a>
+<a name="ln398">	else</a>
+<a name="ln399">		return -1;</a>
+<a name="ln400">}</a>
+<a name="ln401"> </a>
+<a name="ln402">private int</a>
+<a name="ln403">looks_ucs16(const unsigned char *buf, size_t nbytes, unichar *ubuf,</a>
+<a name="ln404">    size_t *ulen)</a>
+<a name="ln405">{</a>
+<a name="ln406">	int bigend;</a>
+<a name="ln407">	size_t i;</a>
+<a name="ln408"> </a>
+<a name="ln409">	if (nbytes &lt; 2)</a>
+<a name="ln410">		return 0;</a>
+<a name="ln411"> </a>
+<a name="ln412">	if (buf[0] == 0xff &amp;&amp; buf[1] == 0xfe)</a>
+<a name="ln413">		bigend = 0;</a>
+<a name="ln414">	else if (buf[0] == 0xfe &amp;&amp; buf[1] == 0xff)</a>
+<a name="ln415">		bigend = 1;</a>
+<a name="ln416">	else</a>
+<a name="ln417">		return 0;</a>
+<a name="ln418"> </a>
+<a name="ln419">	*ulen = 0;</a>
+<a name="ln420"> </a>
+<a name="ln421">	for (i = 2; i + 1 &lt; nbytes; i += 2) {</a>
+<a name="ln422">		/* XXX fix to properly handle chars &gt; 65536 */</a>
+<a name="ln423"> </a>
+<a name="ln424">		if (bigend)</a>
+<a name="ln425">			ubuf[(*ulen)++] = buf[i + 1] + 256 * buf[i];</a>
+<a name="ln426">		else</a>
+<a name="ln427">			ubuf[(*ulen)++] = buf[i] + 256 * buf[i + 1];</a>
+<a name="ln428"> </a>
+<a name="ln429">		if (ubuf[*ulen - 1] == 0xfffe)</a>
+<a name="ln430">			return 0;</a>
+<a name="ln431">		if (ubuf[*ulen - 1] &lt; 128 &amp;&amp;</a>
+<a name="ln432">		    text_chars[(size_t)ubuf[*ulen - 1]] != T)</a>
+<a name="ln433">			return 0;</a>
+<a name="ln434">	}</a>
+<a name="ln435"> </a>
+<a name="ln436">	return 1 + bigend;</a>
+<a name="ln437">}</a>
+<a name="ln438"> </a>
+<a name="ln439">#undef F</a>
+<a name="ln440">#undef T</a>
+<a name="ln441">#undef I</a>
+<a name="ln442">#undef X</a>
+<a name="ln443"> </a>
+<a name="ln444">/*</a>
+<a name="ln445"> * This table maps each EBCDIC character to an (8-bit extended) ASCII</a>
+<a name="ln446"> * character, as specified in the rationale for the dd(1) command in</a>
+<a name="ln447"> * draft 11.2 (September, 1991) of the POSIX P1003.2 standard.</a>
+<a name="ln448"> *</a>
+<a name="ln449"> * Unfortunately it does not seem to correspond exactly to any of the</a>
+<a name="ln450"> * five variants of EBCDIC documented in IBM's _Enterprise Systems</a>
+<a name="ln451"> * Architecture/390: Principles of Operation_, SA22-7201-06, Seventh</a>
+<a name="ln452"> * Edition, July, 1999, pp. I-1 - I-4.</a>
+<a name="ln453"> *</a>
+<a name="ln454"> * Fortunately, though, all versions of EBCDIC, including this one, agree</a>
+<a name="ln455"> * on most of the printing characters that also appear in (7-bit) ASCII.</a>
+<a name="ln456"> * Of these, only '|', '!', '~', '^', '[', and ']' are in question at all.</a>
+<a name="ln457"> *</a>
+<a name="ln458"> * Fortunately too, there is general agreement that codes 0x00 through</a>
+<a name="ln459"> * 0x3F represent control characters, 0x41 a nonbreaking space, and the</a>
+<a name="ln460"> * remainder printing characters.</a>
+<a name="ln461"> *</a>
+<a name="ln462"> * This is sufficient to allow us to identify EBCDIC text and to distinguish</a>
+<a name="ln463"> * between old-style and internationalized examples of text.</a>
+<a name="ln464"> */</a>
+<a name="ln465"> </a>
+<a name="ln466">private unsigned char ebcdic_to_ascii[] = {</a>
+<a name="ln467">  0,   1,   2,   3, 156,   9, 134, 127, 151, 141, 142,  11,  12,  13,  14,  15,</a>
+<a name="ln468"> 16,  17,  18,  19, 157, 133,   8, 135,  24,  25, 146, 143,  28,  29,  30,  31,</a>
+<a name="ln469">128, 129, 130, 131, 132,  10,  23,  27, 136, 137, 138, 139, 140,   5,   6,   7,</a>
+<a name="ln470">144, 145,  22, 147, 148, 149, 150,   4, 152, 153, 154, 155,  20,  21, 158,  26,</a>
+<a name="ln471">' ', 160, 161, 162, 163, 164, 165, 166, 167, 168, 213, '.', '&lt;', '(', '+', '|',</a>
+<a name="ln472">'&amp;', 169, 170, 171, 172, 173, 174, 175, 176, 177, '!', '$', '*', ')', ';', '~',</a>
+<a name="ln473">'-', '/', 178, 179, 180, 181, 182, 183, 184, 185, 203, ',', '%', '_', '&gt;', '?',</a>
+<a name="ln474">186, 187, 188, 189, 190, 191, 192, 193, 194, '`', ':', '#', '@', '\'','=', '&quot;',</a>
+<a name="ln475">195, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 196, 197, 198, 199, 200, 201,</a>
+<a name="ln476">202, 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', '^', 204, 205, 206, 207, 208,</a>
+<a name="ln477">209, 229, 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 210, 211, 212, '[', 214, 215,</a>
+<a name="ln478">216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, ']', 230, 231,</a>
+<a name="ln479">'{', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 232, 233, 234, 235, 236, 237,</a>
+<a name="ln480">'}', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 238, 239, 240, 241, 242, 243,</a>
+<a name="ln481">'\\',159, 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 244, 245, 246, 247, 248, 249,</a>
+<a name="ln482">'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 250, 251, 252, 253, 254, 255</a>
+<a name="ln483">};</a>
+<a name="ln484"> </a>
+<a name="ln485">#ifdef notdef</a>
+<a name="ln486">/*</a>
+<a name="ln487"> * The following EBCDIC-to-ASCII table may relate more closely to reality,</a>
+<a name="ln488"> * or at least to modern reality.  It comes from</a>
+<a name="ln489"> *</a>
+<a name="ln490"> *   http://ftp.s390.ibm.com/products/oe/bpxqp9.html</a>
+<a name="ln491"> *</a>
+<a name="ln492"> * and maps the characters of EBCDIC code page 1047 (the code used for</a>
+<a name="ln493"> * Unix-derived software on IBM's 390 systems) to the corresponding</a>
+<a name="ln494"> * characters from ISO 8859-1.</a>
+<a name="ln495"> *</a>
+<a name="ln496"> * If this table is used instead of the above one, some of the special</a>
+<a name="ln497"> * cases for the NEL character can be taken out of the code.</a>
+<a name="ln498"> */</a>
+<a name="ln499"> </a>
+<a name="ln500">private unsigned char ebcdic_1047_to_8859[] = {</a>
+<a name="ln501">0x00,0x01,0x02,0x03,0x9C,0x09,0x86,0x7F,0x97,0x8D,0x8E,0x0B,0x0C,0x0D,0x0E,0x0F,</a>
+<a name="ln502">0x10,0x11,0x12,0x13,0x9D,0x0A,0x08,0x87,0x18,0x19,0x92,0x8F,0x1C,0x1D,0x1E,0x1F,</a>
+<a name="ln503">0x80,0x81,0x82,0x83,0x84,0x85,0x17,0x1B,0x88,0x89,0x8A,0x8B,0x8C,0x05,0x06,0x07,</a>
+<a name="ln504">0x90,0x91,0x16,0x93,0x94,0x95,0x96,0x04,0x98,0x99,0x9A,0x9B,0x14,0x15,0x9E,0x1A,</a>
+<a name="ln505">0x20,0xA0,0xE2,0xE4,0xE0,0xE1,0xE3,0xE5,0xE7,0xF1,0xA2,0x2E,0x3C,0x28,0x2B,0x7C,</a>
+<a name="ln506">0x26,0xE9,0xEA,0xEB,0xE8,0xED,0xEE,0xEF,0xEC,0xDF,0x21,0x24,0x2A,0x29,0x3B,0x5E,</a>
+<a name="ln507">0x2D,0x2F,0xC2,0xC4,0xC0,0xC1,0xC3,0xC5,0xC7,0xD1,0xA6,0x2C,0x25,0x5F,0x3E,0x3F,</a>
+<a name="ln508">0xF8,0xC9,0xCA,0xCB,0xC8,0xCD,0xCE,0xCF,0xCC,0x60,0x3A,0x23,0x40,0x27,0x3D,0x22,</a>
+<a name="ln509">0xD8,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0xAB,0xBB,0xF0,0xFD,0xFE,0xB1,</a>
+<a name="ln510">0xB0,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F,0x70,0x71,0x72,0xAA,0xBA,0xE6,0xB8,0xC6,0xA4,</a>
+<a name="ln511">0xB5,0x7E,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0xA1,0xBF,0xD0,0x5B,0xDE,0xAE,</a>
+<a name="ln512">0xAC,0xA3,0xA5,0xB7,0xA9,0xA7,0xB6,0xBC,0xBD,0xBE,0xDD,0xA8,0xAF,0x5D,0xB4,0xD7,</a>
+<a name="ln513">0x7B,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0xAD,0xF4,0xF6,0xF2,0xF3,0xF5,</a>
+<a name="ln514">0x7D,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F,0x50,0x51,0x52,0xB9,0xFB,0xFC,0xF9,0xFA,0xFF,</a>
+<a name="ln515">0x5C,0xF7,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0xB2,0xD4,0xD6,0xD2,0xD3,0xD5,</a>
+<a name="ln516">0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0xB3,0xDB,0xDC,0xD9,0xDA,0x9F</a>
+<a name="ln517">};</a>
+<a name="ln518">#endif</a>
+<a name="ln519"> </a>
+<a name="ln520">/*</a>
+<a name="ln521"> * Copy buf[0 ... nbytes-1] into out[], translating EBCDIC to ASCII.</a>
+<a name="ln522"> */</a>
+<a name="ln523">private void</a>
+<a name="ln524">from_ebcdic(const unsigned char *buf, size_t nbytes, unsigned char *out)</a>
+<a name="ln525">{</a>
+<a name="ln526">	size_t i;</a>
+<a name="ln527"> </a>
+<a name="ln528">	for (i = 0; i &lt; nbytes; i++) {</a>
+<a name="ln529">		out[i] = ebcdic_to_ascii[buf[i]];</a>
+<a name="ln530">	}</a>
+<a name="ln531">}</a>
+</code></pre>
+<div class="balloon" rel="83"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v641/" target="_blank">V641</a> The size of the allocated memory buffer is not a multiple of the element size.</p></div>
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

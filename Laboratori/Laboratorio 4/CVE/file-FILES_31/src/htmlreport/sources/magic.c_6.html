@@ -1,0 +1,692 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>magic.c</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.5.1.min.js"></script>
+</head>
+<body>
+<pre><code class = "cpp">
+<a name="ln1">// This is a personal academic project. Dear PVS-Studio, please check it.</a>
+<a name="ln2">// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: http://www.viva64.com</a>
+<a name="ln3">/*</a>
+<a name="ln4"> * Copyright (c) Christos Zoulas 2003.</a>
+<a name="ln5"> * All Rights Reserved.</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * Redistribution and use in source and binary forms, with or without</a>
+<a name="ln8"> * modification, are permitted provided that the following conditions</a>
+<a name="ln9"> * are met:</a>
+<a name="ln10"> * 1. Redistributions of source code must retain the above copyright</a>
+<a name="ln11"> *    notice immediately at the beginning of the file, without modification,</a>
+<a name="ln12"> *    this list of conditions, and the following disclaimer.</a>
+<a name="ln13"> * 2. Redistributions in binary form must reproduce the above copyright</a>
+<a name="ln14"> *    notice, this list of conditions and the following disclaimer in the</a>
+<a name="ln15"> *    documentation and/or other materials provided with the distribution.</a>
+<a name="ln16"> *</a>
+<a name="ln17"> * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND</a>
+<a name="ln18"> * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE</a>
+<a name="ln19"> * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE</a>
+<a name="ln20"> * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR</a>
+<a name="ln21"> * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL</a>
+<a name="ln22"> * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS</a>
+<a name="ln23"> * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)</a>
+<a name="ln24"> * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT</a>
+<a name="ln25"> * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY</a>
+<a name="ln26"> * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF</a>
+<a name="ln27"> * SUCH DAMAGE.</a>
+<a name="ln28"> */</a>
+<a name="ln29"> </a>
+<a name="ln30">#ifdef WIN32</a>
+<a name="ln31">#include &lt;windows.h&gt;</a>
+<a name="ln32">#include &lt;shlwapi.h&gt;</a>
+<a name="ln33">#endif</a>
+<a name="ln34"> </a>
+<a name="ln35">#include &quot;file.h&quot;</a>
+<a name="ln36"> </a>
+<a name="ln37">#ifndef	lint</a>
+<a name="ln38">FILE_RCSID(&quot;@(#)$File: magic.c,v 1.99 2016/05/03 16:09:38 christos Exp $&quot;)</a>
+<a name="ln39">#endif	/* lint */</a>
+<a name="ln40"> </a>
+<a name="ln41">#include &quot;magic.h&quot;</a>
+<a name="ln42"> </a>
+<a name="ln43">#include &lt;stdlib.h&gt;</a>
+<a name="ln44">#include &lt;unistd.h&gt;</a>
+<a name="ln45">#include &lt;string.h&gt;</a>
+<a name="ln46">#ifdef QUICK</a>
+<a name="ln47">#include &lt;sys/mman.h&gt;</a>
+<a name="ln48">#endif</a>
+<a name="ln49">#ifdef HAVE_LIMITS_H</a>
+<a name="ln50">#include &lt;limits.h&gt;	/* for PIPE_BUF */</a>
+<a name="ln51">#endif</a>
+<a name="ln52"> </a>
+<a name="ln53">#if defined(HAVE_UTIMES)</a>
+<a name="ln54"># include &lt;sys/time.h&gt;</a>
+<a name="ln55">#elif defined(HAVE_UTIME)</a>
+<a name="ln56"># if defined(HAVE_SYS_UTIME_H)</a>
+<a name="ln57">#  include &lt;sys/utime.h&gt;</a>
+<a name="ln58"># elif defined(HAVE_UTIME_H)</a>
+<a name="ln59">#  include &lt;utime.h&gt;</a>
+<a name="ln60"># endif</a>
+<a name="ln61">#endif</a>
+<a name="ln62"> </a>
+<a name="ln63">#ifdef HAVE_UNISTD_H</a>
+<a name="ln64">#include &lt;unistd.h&gt;	/* for read() */</a>
+<a name="ln65">#endif</a>
+<a name="ln66"> </a>
+<a name="ln67">#ifndef PIPE_BUF</a>
+<a name="ln68">/* Get the PIPE_BUF from pathconf */</a>
+<a name="ln69">#ifdef _PC_PIPE_BUF</a>
+<a name="ln70">#define PIPE_BUF pathconf(&quot;.&quot;, _PC_PIPE_BUF)</a>
+<a name="ln71">#else</a>
+<a name="ln72">#define PIPE_BUF 512</a>
+<a name="ln73">#endif</a>
+<a name="ln74">#endif</a>
+<a name="ln75"> </a>
+<a name="ln76">private void close_and_restore(const struct magic_set *, const char *, int,</a>
+<a name="ln77">    const struct stat *);</a>
+<a name="ln78">private int unreadable_info(struct magic_set *, mode_t, const char *);</a>
+<a name="ln79">private const char* get_default_magic(void);</a>
+<a name="ln80">#ifndef COMPILE_ONLY</a>
+<a name="ln81">private const char *file_or_fd(struct magic_set *, const char *, int);</a>
+<a name="ln82">#endif</a>
+<a name="ln83"> </a>
+<a name="ln84">#ifndef	STDIN_FILENO</a>
+<a name="ln85">#define	STDIN_FILENO	0</a>
+<a name="ln86">#endif</a>
+<a name="ln87"> </a>
+<a name="ln88">#ifdef WIN32</a>
+<a name="ln89">/* HINSTANCE of this shared library. Needed for get_default_magic() */</a>
+<a name="ln90">static HINSTANCE _w32_dll_instance = NULL;</a>
+<a name="ln91"> </a>
+<a name="ln92">static void</a>
+<a name="ln93">_w32_append_path(char **hmagicpath, const char *fmt, ...)</a>
+<a name="ln94">{</a>
+<a name="ln95">	char *tmppath;</a>
+<a name="ln96">        char *newpath;</a>
+<a name="ln97">	va_list ap;</a>
+<a name="ln98"> </a>
+<a name="ln99">	va_start(ap, fmt);</a>
+<a name="ln100">	if (vasprintf(&amp;tmppath, fmt, ap) &lt; 0) {</a>
+<a name="ln101">		va_end(ap);</a>
+<a name="ln102">		return;</a>
+<a name="ln103">	}</a>
+<a name="ln104">	va_end(ap);</a>
+<a name="ln105"> </a>
+<a name="ln106">	if (access(tmppath, R_OK) == -1)</a>
+<a name="ln107">		goto out;</a>
+<a name="ln108"> </a>
+<a name="ln109">	if (*hmagicpath == NULL) {</a>
+<a name="ln110">		*hmagicpath = tmppath;</a>
+<a name="ln111">		return;</a>
+<a name="ln112">	}</a>
+<a name="ln113"> </a>
+<a name="ln114">	if (asprintf(&amp;newpath, &quot;%s%c%s&quot;, *hmagicpath, PATHSEP, tmppath) &lt; 0)</a>
+<a name="ln115">		goto out;</a>
+<a name="ln116"> </a>
+<a name="ln117">	free(*hmagicpath);</a>
+<a name="ln118">	free(tmppath);</a>
+<a name="ln119">	*hmagicpath = newpath;</a>
+<a name="ln120">	return;</a>
+<a name="ln121">out:</a>
+<a name="ln122">	free(tmppath);</a>
+<a name="ln123">}</a>
+<a name="ln124"> </a>
+<a name="ln125">static void</a>
+<a name="ln126">_w32_get_magic_relative_to(char **hmagicpath, HINSTANCE module)</a>
+<a name="ln127">{</a>
+<a name="ln128">	static const char *trypaths[] = {</a>
+<a name="ln129">		&quot;%s/share/misc/magic.mgc&quot;,</a>
+<a name="ln130">		&quot;%s/magic.mgc&quot;,</a>
+<a name="ln131">	};</a>
+<a name="ln132">	LPSTR dllpath;</a>
+<a name="ln133">	size_t sp;</a>
+<a name="ln134"> </a>
+<a name="ln135">	dllpath = calloc(MAX_PATH + 1, sizeof(*dllpath));</a>
+<a name="ln136"> </a>
+<a name="ln137">	if (!GetModuleFileNameA(module, dllpath, MAX_PATH))</a>
+<a name="ln138">		goto out;</a>
+<a name="ln139"> </a>
+<a name="ln140">	PathRemoveFileSpecA(dllpath);</a>
+<a name="ln141"> </a>
+<a name="ln142">	if (module) {</a>
+<a name="ln143">		char exepath[MAX_PATH];</a>
+<a name="ln144">		GetModuleFileNameA(NULL, exepath, MAX_PATH);</a>
+<a name="ln145">		PathRemoveFileSpecA(exepath);</a>
+<a name="ln146">		if (stricmp(exepath, dllpath) == 0)</a>
+<a name="ln147">			goto out;</a>
+<a name="ln148">	}</a>
+<a name="ln149"> </a>
+<a name="ln150">	sp = strlen(dllpath);</a>
+<a name="ln151">	if (sp &gt; 3 &amp;&amp; stricmp(&amp;dllpath[sp - 3], &quot;bin&quot;) == 0) {</a>
+<a name="ln152">		_w32_append_path(hmagicpath,</a>
+<a name="ln153">		    &quot;%s/../share/misc/magic.mgc&quot;, dllpath);</a>
+<a name="ln154">		goto out;</a>
+<a name="ln155">	}</a>
+<a name="ln156"> </a>
+<a name="ln157">	for (sp = 0; sp &lt; __arraycount(trypaths); sp++)</a>
+<a name="ln158">		_w32_append_path(hmagicpath, trypaths[sp], dllpath);</a>
+<a name="ln159">out:</a>
+<a name="ln160">	free(dllpath);</a>
+<a name="ln161">}</a>
+<a name="ln162"> </a>
+<a name="ln163">/* Placate GCC by offering a sacrificial previous prototype */</a>
+<a name="ln164">BOOL WINAPI DllMain(HINSTANCE, DWORD, LPVOID);</a>
+<a name="ln165"> </a>
+<a name="ln166">BOOL WINAPI</a>
+<a name="ln167">DllMain(HINSTANCE hinstDLL, DWORD fdwReason,</a>
+<a name="ln168">    LPVOID lpvReserved __attribute__((__unused__)))</a>
+<a name="ln169">{</a>
+<a name="ln170">	if (fdwReason == DLL_PROCESS_ATTACH)</a>
+<a name="ln171">		_w32_dll_instance = hinstDLL;</a>
+<a name="ln172">	return TRUE;</a>
+<a name="ln173">}</a>
+<a name="ln174">#endif</a>
+<a name="ln175"> </a>
+<a name="ln176">private const char *</a>
+<a name="ln177">get_default_magic(void)</a>
+<a name="ln178">{</a>
+<a name="ln179">	static const char hmagic[] = &quot;/.magic/magic.mgc&quot;;</a>
+<a name="ln180">	static char *default_magic;</a>
+<a name="ln181">	char *home, *hmagicpath;</a>
+<a name="ln182"> </a>
+<a name="ln183">#ifndef WIN32</a>
+<a name="ln184">	struct stat st;</a>
+<a name="ln185"> </a>
+<a name="ln186">	if (default_magic) {</a>
+<a name="ln187">		free(default_magic);</a>
+<a name="ln188">		default_magic = NULL;</a>
+<a name="ln189">	}</a>
+<a name="ln190">	if ((home = getenv(&quot;HOME&quot;)) == NULL)</a>
+<a name="ln191">		return MAGIC;</a>
+<a name="ln192"> </a>
+<a name="ln193">	if (asprintf(&amp;hmagicpath, &quot;%s/.magic.mgc&quot;, home) &lt; 0)</a>
+<a name="ln194">		return MAGIC;</a>
+<a name="ln195">	if (stat(hmagicpath, &amp;st) == -1) {</a>
+<a name="ln196">		free(hmagicpath);</a>
+<a name="ln197">		if (asprintf(&amp;hmagicpath, &quot;%s/.magic&quot;, home) &lt; 0)</a>
+<a name="ln198">			return MAGIC;</a>
+<a name="ln199">		if (stat(hmagicpath, &amp;st) == -1)</a>
+<a name="ln200">			goto out;</a>
+<a name="ln201">		if (S_ISDIR(st.st_mode)) {</a>
+<a name="ln202">			free(hmagicpath);</a>
+<a name="ln203">			if (asprintf(&amp;hmagicpath, &quot;%s/%s&quot;, home, hmagic) &lt; 0)</a>
+<a name="ln204">				return MAGIC;</a>
+<a name="ln205">			if (access(hmagicpath, R_OK) == -1)</a>
+<a name="ln206">				goto out;</a>
+<a name="ln207">		}</a>
+<a name="ln208">	}</a>
+<a name="ln209"> </a>
+<a name="ln210">	if (asprintf(&amp;default_magic, &quot;%s:%s&quot;, hmagicpath, MAGIC) &lt; 0)</a>
+<a name="ln211">		goto out;</a>
+<a name="ln212">	free(hmagicpath);</a>
+<a name="ln213">	return default_magic;</a>
+<a name="ln214">out:</a>
+<a name="ln215">	default_magic = NULL;</a>
+<a name="ln216">	free(hmagicpath);</a>
+<a name="ln217">	return MAGIC;</a>
+<a name="ln218">#else</a>
+<a name="ln219">	hmagicpath = NULL;</a>
+<a name="ln220"> </a>
+<a name="ln221">	if (default_magic) {</a>
+<a name="ln222">		free(default_magic);</a>
+<a name="ln223">		default_magic = NULL;</a>
+<a name="ln224">	}</a>
+<a name="ln225"> </a>
+<a name="ln226">	/* First, try to get a magic file from user-application data */</a>
+<a name="ln227">	if ((home = getenv(&quot;LOCALAPPDATA&quot;)) != NULL)</a>
+<a name="ln228">		_w32_append_path(&amp;hmagicpath, &quot;%s%s&quot;, home, hmagic);</a>
+<a name="ln229"> </a>
+<a name="ln230">	/* Second, try to get a magic file from the user profile data */</a>
+<a name="ln231">	if ((home = getenv(&quot;USERPROFILE&quot;)) != NULL)</a>
+<a name="ln232">		_w32_append_path(&amp;hmagicpath,</a>
+<a name="ln233">		    &quot;%s/Local Settings/Application Data%s&quot;, home, hmagic);</a>
+<a name="ln234"> </a>
+<a name="ln235">	/* Third, try to get a magic file from Common Files */</a>
+<a name="ln236">	if ((home = getenv(&quot;COMMONPROGRAMFILES&quot;)) != NULL)</a>
+<a name="ln237">		_w32_append_path(&amp;hmagicpath, &quot;%s%s&quot;, home, hmagic);</a>
+<a name="ln238"> </a>
+<a name="ln239">	/* Fourth, try to get magic file relative to exe location */</a>
+<a name="ln240">        _w32_get_magic_relative_to(&amp;hmagicpath, NULL);</a>
+<a name="ln241"> </a>
+<a name="ln242">	/* Fifth, try to get magic file relative to dll location */</a>
+<a name="ln243">        _w32_get_magic_relative_to(&amp;hmagicpath, _w32_dll_instance);</a>
+<a name="ln244"> </a>
+<a name="ln245">	/* Avoid MAGIC constant - it likely points to a file within MSys tree */</a>
+<a name="ln246">	default_magic = hmagicpath;</a>
+<a name="ln247">	return default_magic;</a>
+<a name="ln248">#endif</a>
+<a name="ln249">}</a>
+<a name="ln250"> </a>
+<a name="ln251">public const char *</a>
+<a name="ln252">magic_getpath(const char *magicfile, int action)</a>
+<a name="ln253">{</a>
+<a name="ln254">	if (magicfile != NULL)</a>
+<a name="ln255">		return magicfile;</a>
+<a name="ln256"> </a>
+<a name="ln257">	magicfile = getenv(&quot;MAGIC&quot;);</a>
+<a name="ln258">	if (magicfile != NULL)</a>
+<a name="ln259">		return magicfile;</a>
+<a name="ln260"> </a>
+<a name="ln261">	return action == FILE_LOAD ? get_default_magic() : MAGIC;</a>
+<a name="ln262">}</a>
+<a name="ln263"> </a>
+<a name="ln264">public struct magic_set *</a>
+<a name="ln265">magic_open(int flags)</a>
+<a name="ln266">{</a>
+<a name="ln267">	return file_ms_alloc(flags);</a>
+<a name="ln268">}</a>
+<a name="ln269"> </a>
+<a name="ln270">private int</a>
+<a name="ln271">unreadable_info(struct magic_set *ms, mode_t md, const char *file)</a>
+<a name="ln272">{</a>
+<a name="ln273">	if (file) {</a>
+<a name="ln274">		/* We cannot open it, but we were able to stat it. */</a>
+<a name="ln275">		if (access(file, W_OK) == 0)</a>
+<a name="ln276">			if (file_printf(ms, &quot;writable, &quot;) == -1)</a>
+<a name="ln277">				return -1;</a>
+<a name="ln278">		if (access(file, X_OK) == 0)</a>
+<a name="ln279">			if (file_printf(ms, &quot;executable, &quot;) == -1)</a>
+<a name="ln280">				return -1;</a>
+<a name="ln281">	}</a>
+<a name="ln282">	if (S_ISREG(md))</a>
+<a name="ln283">		if (file_printf(ms, &quot;regular file, &quot;) == -1)</a>
+<a name="ln284">			return -1;</a>
+<a name="ln285">	if (file_printf(ms, &quot;no read permission&quot;) == -1)</a>
+<a name="ln286">		return -1;</a>
+<a name="ln287">	return 0;</a>
+<a name="ln288">}</a>
+<a name="ln289"> </a>
+<a name="ln290">public void</a>
+<a name="ln291">magic_close(struct magic_set *ms)</a>
+<a name="ln292">{</a>
+<a name="ln293">	if (ms == NULL)</a>
+<a name="ln294">		return;</a>
+<a name="ln295">	file_ms_free(ms);</a>
+<a name="ln296">}</a>
+<a name="ln297"> </a>
+<a name="ln298">/*</a>
+<a name="ln299"> * load a magic file</a>
+<a name="ln300"> */</a>
+<a name="ln301">public int</a>
+<a name="ln302">magic_load(struct magic_set *ms, const char *magicfile)</a>
+<a name="ln303">{</a>
+<a name="ln304">	if (ms == NULL)</a>
+<a name="ln305">		return -1;</a>
+<a name="ln306">	return file_apprentice(ms, magicfile, FILE_LOAD);</a>
+<a name="ln307">}</a>
+<a name="ln308"> </a>
+<a name="ln309">#ifndef COMPILE_ONLY</a>
+<a name="ln310">/*</a>
+<a name="ln311"> * Install a set of compiled magic buffers.</a>
+<a name="ln312"> */</a>
+<a name="ln313">public int</a>
+<a name="ln314">magic_load_buffers(struct magic_set *ms, void **bufs, size_t *sizes,</a>
+<a name="ln315">    size_t nbufs)</a>
+<a name="ln316">{</a>
+<a name="ln317">	if (ms == NULL)</a>
+<a name="ln318">		return -1;</a>
+<a name="ln319">	return buffer_apprentice(ms, (struct magic **)bufs, sizes, nbufs);</a>
+<a name="ln320">}</a>
+<a name="ln321">#endif</a>
+<a name="ln322"> </a>
+<a name="ln323">public int</a>
+<a name="ln324">magic_compile(struct magic_set *ms, const char *magicfile)</a>
+<a name="ln325">{</a>
+<a name="ln326">	if (ms == NULL)</a>
+<a name="ln327">		return -1;</a>
+<a name="ln328">	return file_apprentice(ms, magicfile, FILE_COMPILE);</a>
+<a name="ln329">}</a>
+<a name="ln330"> </a>
+<a name="ln331">public int</a>
+<a name="ln332">magic_check(struct magic_set *ms, const char *magicfile)</a>
+<a name="ln333">{</a>
+<a name="ln334">	if (ms == NULL)</a>
+<a name="ln335">		return -1;</a>
+<a name="ln336">	return file_apprentice(ms, magicfile, FILE_CHECK);</a>
+<a name="ln337">}</a>
+<a name="ln338"> </a>
+<a name="ln339">public int</a>
+<a name="ln340">magic_list(struct magic_set *ms, const char *magicfile)</a>
+<a name="ln341">{</a>
+<a name="ln342">	if (ms == NULL)</a>
+<a name="ln343">		return -1;</a>
+<a name="ln344">	return file_apprentice(ms, magicfile, FILE_LIST);</a>
+<a name="ln345">}</a>
+<a name="ln346"> </a>
+<a name="ln347">private void</a>
+<a name="ln348">close_and_restore(const struct magic_set *ms, const char *name, int fd,</a>
+<a name="ln349">    const struct stat *sb)</a>
+<a name="ln350">{</a>
+<a name="ln351">	if (fd == STDIN_FILENO || name == NULL)</a>
+<a name="ln352">		return;</a>
+<a name="ln353">	(void) close(fd);</a>
+<a name="ln354"> </a>
+<a name="ln355">	if ((ms-&gt;flags &amp; MAGIC_PRESERVE_ATIME) != 0) {</a>
+<a name="ln356">		/*</a>
+<a name="ln357">		 * Try to restore access, modification times if read it.</a>
+<a name="ln358">		 * This is really *bad* because it will modify the status</a>
+<a name="ln359">		 * time of the file... And of course this will affect</a>
+<a name="ln360">		 * backup programs</a>
+<a name="ln361">		 */</a>
+<a name="ln362">#ifdef HAVE_UTIMES</a>
+<a name="ln363">		struct timeval  utsbuf[2];</a>
+<a name="ln364">		(void)memset(utsbuf, 0, sizeof(utsbuf));</a>
+<a name="ln365">		utsbuf[0].tv_sec = sb-&gt;st_atime;</a>
+<a name="ln366">		utsbuf[1].tv_sec = sb-&gt;st_mtime;</a>
+<a name="ln367"> </a>
+<a name="ln368">		(void) utimes(name, utsbuf); /* don't care if loses */</a>
+<a name="ln369">#elif defined(HAVE_UTIME_H) || defined(HAVE_SYS_UTIME_H)</a>
+<a name="ln370">		struct utimbuf  utbuf;</a>
+<a name="ln371"> </a>
+<a name="ln372">		(void)memset(&amp;utbuf, 0, sizeof(utbuf));</a>
+<a name="ln373">		utbuf.actime = sb-&gt;st_atime;</a>
+<a name="ln374">		utbuf.modtime = sb-&gt;st_mtime;</a>
+<a name="ln375">		(void) utime(name, &amp;utbuf); /* don't care if loses */</a>
+<a name="ln376">#endif</a>
+<a name="ln377">	}</a>
+<a name="ln378">}</a>
+<a name="ln379"> </a>
+<a name="ln380">#ifndef COMPILE_ONLY</a>
+<a name="ln381"> </a>
+<a name="ln382">/*</a>
+<a name="ln383"> * find type of descriptor</a>
+<a name="ln384"> */</a>
+<a name="ln385">public const char *</a>
+<a name="ln386">magic_descriptor(struct magic_set *ms, int fd)</a>
+<a name="ln387">{</a>
+<a name="ln388">	if (ms == NULL)</a>
+<a name="ln389">		return NULL;</a>
+<a name="ln390">	return file_or_fd(ms, NULL, fd);</a>
+<a name="ln391">}</a>
+<a name="ln392"> </a>
+<a name="ln393">/*</a>
+<a name="ln394"> * find type of named file</a>
+<a name="ln395"> */</a>
+<a name="ln396">public const char *</a>
+<a name="ln397">magic_file(struct magic_set *ms, const char *inname)</a>
+<a name="ln398">{</a>
+<a name="ln399">	if (ms == NULL)</a>
+<a name="ln400">		return NULL;</a>
+<a name="ln401">	return file_or_fd(ms, inname, STDIN_FILENO);</a>
+<a name="ln402">}</a>
+<a name="ln403"> </a>
+<a name="ln404">private const char *</a>
+<a name="ln405">file_or_fd(struct magic_set *ms, const char *inname, int fd)</a>
+<a name="ln406">{</a>
+<a name="ln407">	int	rv = -1;</a>
+<a name="ln408">	unsigned char *buf;</a>
+<a name="ln409">	struct stat	sb;</a>
+<a name="ln410">	ssize_t nbytes = 0;	/* number of bytes read from a datafile */</a>
+<a name="ln411">	int	ispipe = 0;</a>
+<a name="ln412">	off_t	pos = (off_t)-1;</a>
+<a name="ln413"> </a>
+<a name="ln414">	if (file_reset(ms) == -1)</a>
+<a name="ln415">		goto out;</a>
+<a name="ln416"> </a>
+<a name="ln417">	/*</a>
+<a name="ln418">	 * one extra for terminating '\0', and</a>
+<a name="ln419">	 * some overlapping space for matches near EOF</a>
+<a name="ln420">	 */</a>
+<a name="ln421">#define SLOP (1 + sizeof(union VALUETYPE))</a>
+<a name="ln422">	if ((buf = CAST(unsigned char *, malloc(ms-&gt;bytes_max + SLOP))) == NULL)</a>
+<a name="ln423">		return NULL;</a>
+<a name="ln424"> </a>
+<a name="ln425">	switch (file_fsmagic(ms, inname, &amp;sb)) {</a>
+<a name="ln426">	case -1:		/* error */</a>
+<a name="ln427">		goto done;</a>
+<a name="ln428">	case 0:			/* nothing found */</a>
+<a name="ln429">		break;</a>
+<a name="ln430">	default:		/* matched it and printed type */</a>
+<a name="ln431">		rv = 0;</a>
+<a name="ln432">		goto done;</a>
+<a name="ln433">	}</a>
+<a name="ln434"> </a>
+<a name="ln435">#ifdef WIN32</a>
+<a name="ln436">	/* Place stdin in binary mode, so EOF (Ctrl+Z) doesn't stop early. */</a>
+<a name="ln437">	if (fd == STDIN_FILENO)</a>
+<a name="ln438">		_setmode(STDIN_FILENO, O_BINARY);</a>
+<a name="ln439">#endif</a>
+<a name="ln440"> </a>
+<a name="ln441">	if (inname == NULL) {</a>
+<a name="ln442">		if (fstat(fd, &amp;sb) == 0 &amp;&amp; S_ISFIFO(sb.st_mode))</a>
+<a name="ln443">			ispipe = 1;</a>
+<a name="ln444">		else</a>
+<a name="ln445">			pos = lseek(fd, (off_t)0, SEEK_CUR);</a>
+<a name="ln446">	} else {</a>
+<a name="ln447">		int flags = O_RDONLY|O_BINARY;</a>
+<a name="ln448">		int okstat = stat(inname, &amp;sb) == 0;</a>
+<a name="ln449"> </a>
+<a name="ln450">		if (okstat &amp;&amp; S_ISFIFO(sb.st_mode)) {</a>
+<a name="ln451">#ifdef O_NONBLOCK</a>
+<a name="ln452">			flags |= O_NONBLOCK;</a>
+<a name="ln453">#endif</a>
+<a name="ln454">			ispipe = 1;</a>
+<a name="ln455">		}</a>
+<a name="ln456"> </a>
+<a name="ln457">		errno = 0;</a>
+<a name="ln458">		if ((fd = open(inname, flags)) &lt; 0) {</a>
+<a name="ln459">#ifdef WIN32</a>
+<a name="ln460">			/*</a>
+<a name="ln461">			 * Can't stat, can't open.  It may have been opened in</a>
+<a name="ln462">			 * fsmagic, so if the user doesn't have read permission,</a>
+<a name="ln463">			 * allow it to say so; otherwise an error was probably</a>
+<a name="ln464">			 * displayed in fsmagic.</a>
+<a name="ln465">			 */</a>
+<a name="ln466">			if (!okstat &amp;&amp; errno == EACCES) {</a>
+<a name="ln467">				sb.st_mode = S_IFBLK;</a>
+<a name="ln468">				okstat = 1;</a>
+<a name="ln469">			}</a>
+<a name="ln470">#endif</a>
+<a name="ln471">			if (okstat &amp;&amp;</a>
+<a name="ln472">			    unreadable_info(ms, sb.st_mode, inname) == -1)</a>
+<a name="ln473">				goto done;</a>
+<a name="ln474">			rv = 0;</a>
+<a name="ln475">			goto done;</a>
+<a name="ln476">		}</a>
+<a name="ln477">#ifdef O_NONBLOCK</a>
+<a name="ln478">		if ((flags = fcntl(fd, F_GETFL)) != -1) {</a>
+<a name="ln479">			flags &amp;= ~O_NONBLOCK;</a>
+<a name="ln480">			(void)fcntl(fd, F_SETFL, flags);</a>
+<a name="ln481">		}</a>
+<a name="ln482">#endif</a>
+<a name="ln483">	}</a>
+<a name="ln484"> </a>
+<a name="ln485">	/*</a>
+<a name="ln486">	 * try looking at the first ms-&gt;bytes_max bytes</a>
+<a name="ln487">	 */</a>
+<a name="ln488">	if (ispipe) {</a>
+<a name="ln489">		ssize_t r = 0;</a>
+<a name="ln490"> </a>
+<a name="ln491">		while ((r = sread(fd, (void *)&amp;buf[nbytes],</a>
+<a name="ln492">		    (size_t)(ms-&gt;bytes_max - nbytes), 1)) &gt; 0) {</a>
+<a name="ln493">			nbytes += r;</a>
+<a name="ln494">			if (r &lt; PIPE_BUF) break;</a>
+<a name="ln495">		}</a>
+<a name="ln496"> </a>
+<a name="ln497">		if (nbytes == 0 &amp;&amp; inname) {</a>
+<a name="ln498">			/* We can not read it, but we were able to stat it. */</a>
+<a name="ln499">			if (unreadable_info(ms, sb.st_mode, inname) == -1)</a>
+<a name="ln500">				goto done;</a>
+<a name="ln501">			rv = 0;</a>
+<a name="ln502">			goto done;</a>
+<a name="ln503">		}</a>
+<a name="ln504"> </a>
+<a name="ln505">	} else {</a>
+<a name="ln506">		/* Windows refuses to read from a big console buffer. */</a>
+<a name="ln507">		size_t howmany =</a>
+<a name="ln508">#if defined(WIN32)</a>
+<a name="ln509">				_isatty(fd) ? 8 * 1024 :</a>
+<a name="ln510">#endif</a>
+<a name="ln511">				ms-&gt;bytes_max;</a>
+<a name="ln512">		if ((nbytes = read(fd, (char *)buf, howmany)) == -1) {</a>
+<a name="ln513">			if (inname == NULL &amp;&amp; fd != STDIN_FILENO)</a>
+<a name="ln514">				file_error(ms, errno, &quot;cannot read fd %d&quot;, fd);</a>
+<a name="ln515">			else</a>
+<a name="ln516">				file_error(ms, errno, &quot;cannot read `%s'&quot;,</a>
+<a name="ln517">				    inname == NULL ? &quot;/dev/stdin&quot; : inname);</a>
+<a name="ln518">			goto done;</a>
+<a name="ln519">		}</a>
+<a name="ln520">	}</a>
+<a name="ln521"> </a>
+<a name="ln522">	(void)memset(buf + nbytes, 0, SLOP); /* NUL terminate */</a>
+<a name="ln523">	if (file_buffer(ms, fd, inname, buf, (size_t)nbytes) == -1)</a>
+<a name="ln524">		goto done;</a>
+<a name="ln525">	rv = 0;</a>
+<a name="ln526">done:</a>
+<a name="ln527">	free(buf);</a>
+<a name="ln528">	if (fd != -1) {</a>
+<a name="ln529">		if (pos != (off_t)-1)</a>
+<a name="ln530">			(void)lseek(fd, pos, SEEK_SET);</a>
+<a name="ln531">		close_and_restore(ms, inname, fd, &amp;sb);</a>
+<a name="ln532">	}</a>
+<a name="ln533">out:</a>
+<a name="ln534">	return rv == 0 ? file_getbuffer(ms) : NULL;</a>
+<a name="ln535">}</a>
+<a name="ln536"> </a>
+<a name="ln537"> </a>
+<a name="ln538">public const char *</a>
+<a name="ln539">magic_buffer(struct magic_set *ms, const void *buf, size_t nb)</a>
+<a name="ln540">{</a>
+<a name="ln541">	if (ms == NULL)</a>
+<a name="ln542">		return NULL;</a>
+<a name="ln543">	if (file_reset(ms) == -1)</a>
+<a name="ln544">		return NULL;</a>
+<a name="ln545">	/*</a>
+<a name="ln546">	 * The main work is done here!</a>
+<a name="ln547">	 * We have the file name and/or the data buffer to be identified.</a>
+<a name="ln548">	 */</a>
+<a name="ln549">	if (file_buffer(ms, -1, NULL, buf, nb) == -1) {</a>
+<a name="ln550">		return NULL;</a>
+<a name="ln551">	}</a>
+<a name="ln552">	return file_getbuffer(ms);</a>
+<a name="ln553">}</a>
+<a name="ln554">#endif</a>
+<a name="ln555"> </a>
+<a name="ln556">public const char *</a>
+<a name="ln557">magic_error(struct magic_set *ms)</a>
+<a name="ln558">{</a>
+<a name="ln559">	if (ms == NULL)</a>
+<a name="ln560">		return &quot;Magic database is not open&quot;;</a>
+<a name="ln561">	return (ms-&gt;event_flags &amp; EVENT_HAD_ERR) ? ms-&gt;o.buf : NULL;</a>
+<a name="ln562">}</a>
+<a name="ln563"> </a>
+<a name="ln564">public int</a>
+<a name="ln565">magic_errno(struct magic_set *ms)</a>
+<a name="ln566">{</a>
+<a name="ln567">	if (ms == NULL)</a>
+<a name="ln568">		return EINVAL;</a>
+<a name="ln569">	return (ms-&gt;event_flags &amp; EVENT_HAD_ERR) ? ms-&gt;error : 0;</a>
+<a name="ln570">}</a>
+<a name="ln571"> </a>
+<a name="ln572">public int</a>
+<a name="ln573">magic_setflags(struct magic_set *ms, int flags)</a>
+<a name="ln574">{</a>
+<a name="ln575">	if (ms == NULL)</a>
+<a name="ln576">		return -1;</a>
+<a name="ln577">#if !defined(HAVE_UTIME) &amp;&amp; !defined(HAVE_UTIMES)</a>
+<a name="ln578">	if (flags &amp; MAGIC_PRESERVE_ATIME)</a>
+<a name="ln579">		return -1;</a>
+<a name="ln580">#endif</a>
+<a name="ln581">	ms-&gt;flags = flags;</a>
+<a name="ln582">	return 0;</a>
+<a name="ln583">}</a>
+<a name="ln584"> </a>
+<a name="ln585">public int</a>
+<a name="ln586">magic_version(void)</a>
+<a name="ln587">{</a>
+<a name="ln588">	return MAGIC_VERSION;</a>
+<a name="ln589">}</a>
+<a name="ln590"> </a>
+<a name="ln591">public int</a>
+<a name="ln592">magic_setparam(struct magic_set *ms, int param, const void *val)</a>
+<a name="ln593">{</a>
+<a name="ln594">	switch (param) {</a>
+<a name="ln595">	case MAGIC_PARAM_INDIR_MAX:</a>
+<a name="ln596">		ms-&gt;indir_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln597">		return 0;</a>
+<a name="ln598">	case MAGIC_PARAM_NAME_MAX:</a>
+<a name="ln599">		ms-&gt;name_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln600">		return 0;</a>
+<a name="ln601">	case MAGIC_PARAM_ELF_PHNUM_MAX:</a>
+<a name="ln602">		ms-&gt;elf_phnum_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln603">		return 0;</a>
+<a name="ln604">	case MAGIC_PARAM_ELF_SHNUM_MAX:</a>
+<a name="ln605">		ms-&gt;elf_shnum_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln606">		return 0;</a>
+<a name="ln607">	case MAGIC_PARAM_ELF_NOTES_MAX:</a>
+<a name="ln608">		ms-&gt;elf_notes_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln609">		return 0;</a>
+<a name="ln610">	case MAGIC_PARAM_REGEX_MAX:</a>
+<a name="ln611">		ms-&gt;elf_notes_max = (uint16_t)*(const size_t *)val;</a>
+<a name="ln612">		return 0;</a>
+<a name="ln613">	case MAGIC_PARAM_BYTES_MAX:</a>
+<a name="ln614">		ms-&gt;bytes_max = *(const size_t *)val;</a>
+<a name="ln615">		return 0;</a>
+<a name="ln616">	default:</a>
+<a name="ln617">		errno = EINVAL;</a>
+<a name="ln618">		return -1;</a>
+<a name="ln619">	}</a>
+<a name="ln620">}</a>
+<a name="ln621"> </a>
+<a name="ln622">public int</a>
+<a name="ln623">magic_getparam(struct magic_set *ms, int param, void *val)</a>
+<a name="ln624">{</a>
+<a name="ln625">	switch (param) {</a>
+<a name="ln626">	case MAGIC_PARAM_INDIR_MAX:</a>
+<a name="ln627">		*(size_t *)val = ms-&gt;indir_max;</a>
+<a name="ln628">		return 0;</a>
+<a name="ln629">	case MAGIC_PARAM_NAME_MAX:</a>
+<a name="ln630">		*(size_t *)val = ms-&gt;name_max;</a>
+<a name="ln631">		return 0;</a>
+<a name="ln632">	case MAGIC_PARAM_ELF_PHNUM_MAX:</a>
+<a name="ln633">		*(size_t *)val = ms-&gt;elf_phnum_max;</a>
+<a name="ln634">		return 0;</a>
+<a name="ln635">	case MAGIC_PARAM_ELF_SHNUM_MAX:</a>
+<a name="ln636">		*(size_t *)val = ms-&gt;elf_shnum_max;</a>
+<a name="ln637">		return 0;</a>
+<a name="ln638">	case MAGIC_PARAM_ELF_NOTES_MAX:</a>
+<a name="ln639">		*(size_t *)val = ms-&gt;elf_notes_max;</a>
+<a name="ln640">		return 0;</a>
+<a name="ln641">	case MAGIC_PARAM_REGEX_MAX:</a>
+<a name="ln642">		*(size_t *)val = ms-&gt;regex_max;</a>
+<a name="ln643">		return 0;</a>
+<a name="ln644">	case MAGIC_PARAM_BYTES_MAX:</a>
+<a name="ln645">		*(size_t *)val = ms-&gt;bytes_max;</a>
+<a name="ln646">		return 0;</a>
+<a name="ln647">	default:</a>
+<a name="ln648">		errno = EINVAL;</a>
+<a name="ln649">		return -1;</a>
+<a name="ln650">	}</a>
+<a name="ln651">}</a>
+</code></pre>
+<div class="balloon" rel="608"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 608, 611</p></div>
+<div class="balloon" rel="353"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1095/" target="_blank">V1095</a> Usage of potentially invalid handle. The value should be non-negative. Check the 'fd' argument.</p></div>
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

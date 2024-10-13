@@ -1,0 +1,3397 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>apprentice.c</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.5.1.min.js"></script>
+</head>
+<body>
+<pre><code class = "cpp">
+<a name="ln1">// This is a personal academic project. Dear PVS-Studio, please check it.</a>
+<a name="ln2">// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: http://www.viva64.com</a>
+<a name="ln3">/*</a>
+<a name="ln4"> * Copyright (c) Ian F. Darwin 1986-1995.</a>
+<a name="ln5"> * Software written by Ian F. Darwin and others;</a>
+<a name="ln6"> * maintained 1995-present by Christos Zoulas and others.</a>
+<a name="ln7"> * </a>
+<a name="ln8"> * Redistribution and use in source and binary forms, with or without</a>
+<a name="ln9"> * modification, are permitted provided that the following conditions</a>
+<a name="ln10"> * are met:</a>
+<a name="ln11"> * 1. Redistributions of source code must retain the above copyright</a>
+<a name="ln12"> *    notice immediately at the beginning of the file, without modification,</a>
+<a name="ln13"> *    this list of conditions, and the following disclaimer.</a>
+<a name="ln14"> * 2. Redistributions in binary form must reproduce the above copyright</a>
+<a name="ln15"> *    notice, this list of conditions and the following disclaimer in the</a>
+<a name="ln16"> *    documentation and/or other materials provided with the distribution.</a>
+<a name="ln17"> *  </a>
+<a name="ln18"> * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND</a>
+<a name="ln19"> * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE</a>
+<a name="ln20"> * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE</a>
+<a name="ln21"> * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR</a>
+<a name="ln22"> * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL</a>
+<a name="ln23"> * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS</a>
+<a name="ln24"> * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)</a>
+<a name="ln25"> * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT</a>
+<a name="ln26"> * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY</a>
+<a name="ln27"> * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF</a>
+<a name="ln28"> * SUCH DAMAGE.</a>
+<a name="ln29"> */</a>
+<a name="ln30">/*</a>
+<a name="ln31"> * apprentice - make one pass through /etc/magic, learning its secrets.</a>
+<a name="ln32"> */</a>
+<a name="ln33"> </a>
+<a name="ln34">#include &quot;file.h&quot;</a>
+<a name="ln35"> </a>
+<a name="ln36">#ifndef	lint</a>
+<a name="ln37">FILE_RCSID(&quot;@(#)$File: apprentice.c,v 1.260 2017/04/28 16:27:58 christos Exp $&quot;)</a>
+<a name="ln38">#endif	/* lint */</a>
+<a name="ln39"> </a>
+<a name="ln40">#include &quot;magic.h&quot;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#ifdef HAVE_UNISTD_H</a>
+<a name="ln43">#include &lt;unistd.h&gt;</a>
+<a name="ln44">#endif</a>
+<a name="ln45">#ifdef HAVE_STDDEF_H</a>
+<a name="ln46">#include &lt;stddef.h&gt;</a>
+<a name="ln47">#endif</a>
+<a name="ln48">#include &lt;string.h&gt;</a>
+<a name="ln49">#include &lt;assert.h&gt;</a>
+<a name="ln50">#include &lt;ctype.h&gt;</a>
+<a name="ln51">#include &lt;fcntl.h&gt;</a>
+<a name="ln52">#ifdef QUICK</a>
+<a name="ln53">#include &lt;sys/mman.h&gt;</a>
+<a name="ln54">#endif</a>
+<a name="ln55">#include &lt;dirent.h&gt;</a>
+<a name="ln56">#if defined(HAVE_LIMITS_H)</a>
+<a name="ln57">#include &lt;limits.h&gt;</a>
+<a name="ln58">#endif</a>
+<a name="ln59"> </a>
+<a name="ln60">#ifndef SSIZE_MAX</a>
+<a name="ln61">#define MAXMAGIC_SIZE        ((ssize_t)0x7fffffff)</a>
+<a name="ln62">#else</a>
+<a name="ln63">#define MAXMAGIC_SIZE        SSIZE_MAX</a>
+<a name="ln64">#endif</a>
+<a name="ln65"> </a>
+<a name="ln66">#define	EATAB {while (isascii((unsigned char) *l) &amp;&amp; \</a>
+<a name="ln67">		      isspace((unsigned char) *l))  ++l;}</a>
+<a name="ln68">#define LOWCASE(l) (isupper((unsigned char) (l)) ? \</a>
+<a name="ln69">			tolower((unsigned char) (l)) : (l))</a>
+<a name="ln70">/*</a>
+<a name="ln71"> * Work around a bug in headers on Digital Unix.</a>
+<a name="ln72"> * At least confirmed for: OSF1 V4.0 878</a>
+<a name="ln73"> */</a>
+<a name="ln74">#if defined(__osf__) &amp;&amp; defined(__DECC)</a>
+<a name="ln75">#ifdef MAP_FAILED</a>
+<a name="ln76">#undef MAP_FAILED</a>
+<a name="ln77">#endif</a>
+<a name="ln78">#endif</a>
+<a name="ln79"> </a>
+<a name="ln80">#ifndef MAP_FAILED</a>
+<a name="ln81">#define MAP_FAILED (void *) -1</a>
+<a name="ln82">#endif</a>
+<a name="ln83"> </a>
+<a name="ln84">#ifndef MAP_FILE</a>
+<a name="ln85">#define MAP_FILE 0</a>
+<a name="ln86">#endif</a>
+<a name="ln87"> </a>
+<a name="ln88">#define ALLOC_CHUNK	(size_t)10</a>
+<a name="ln89">#define ALLOC_INCR	(size_t)200</a>
+<a name="ln90"> </a>
+<a name="ln91">#define MAP_TYPE_USER	0</a>
+<a name="ln92">#define MAP_TYPE_MALLOC	1</a>
+<a name="ln93">#define MAP_TYPE_MMAP	2</a>
+<a name="ln94"> </a>
+<a name="ln95">struct magic_entry {</a>
+<a name="ln96">	struct magic *mp;	</a>
+<a name="ln97">	uint32_t cont_count;</a>
+<a name="ln98">	uint32_t max_count;</a>
+<a name="ln99">};</a>
+<a name="ln100"> </a>
+<a name="ln101">struct magic_entry_set {</a>
+<a name="ln102">	struct magic_entry *me;</a>
+<a name="ln103">	uint32_t count;</a>
+<a name="ln104">	uint32_t max;</a>
+<a name="ln105">};</a>
+<a name="ln106"> </a>
+<a name="ln107">struct magic_map {</a>
+<a name="ln108">	void *p;</a>
+<a name="ln109">	size_t len;</a>
+<a name="ln110">	int type;</a>
+<a name="ln111">	struct magic *magic[MAGIC_SETS];</a>
+<a name="ln112">	uint32_t nmagic[MAGIC_SETS];</a>
+<a name="ln113">};</a>
+<a name="ln114"> </a>
+<a name="ln115">int file_formats[FILE_NAMES_SIZE];</a>
+<a name="ln116">const size_t file_nformats = FILE_NAMES_SIZE;</a>
+<a name="ln117">const char *file_names[FILE_NAMES_SIZE];</a>
+<a name="ln118">const size_t file_nnames = FILE_NAMES_SIZE;</a>
+<a name="ln119"> </a>
+<a name="ln120">private int getvalue(struct magic_set *ms, struct magic *, const char **, int);</a>
+<a name="ln121">private int hextoint(int);</a>
+<a name="ln122">private const char *getstr(struct magic_set *, struct magic *, const char *,</a>
+<a name="ln123">    int);</a>
+<a name="ln124">private int parse(struct magic_set *, struct magic_entry *, const char *,</a>
+<a name="ln125">    size_t, int);</a>
+<a name="ln126">private void eatsize(const char **);</a>
+<a name="ln127">private int apprentice_1(struct magic_set *, const char *, int);</a>
+<a name="ln128">private size_t apprentice_magic_strength(const struct magic *);</a>
+<a name="ln129">private int apprentice_sort(const void *, const void *);</a>
+<a name="ln130">private void apprentice_list(struct mlist *, int );</a>
+<a name="ln131">private struct magic_map *apprentice_load(struct magic_set *, </a>
+<a name="ln132">    const char *, int);</a>
+<a name="ln133">private struct mlist *mlist_alloc(void);</a>
+<a name="ln134">private void mlist_free(struct mlist *);</a>
+<a name="ln135">private void byteswap(struct magic *, uint32_t);</a>
+<a name="ln136">private void bs1(struct magic *);</a>
+<a name="ln137">private uint16_t swap2(uint16_t);</a>
+<a name="ln138">private uint32_t swap4(uint32_t);</a>
+<a name="ln139">private uint64_t swap8(uint64_t);</a>
+<a name="ln140">private char *mkdbname(struct magic_set *, const char *, int);</a>
+<a name="ln141">private struct magic_map *apprentice_buf(struct magic_set *, struct magic *,</a>
+<a name="ln142">    size_t);</a>
+<a name="ln143">private struct magic_map *apprentice_map(struct magic_set *, const char *);</a>
+<a name="ln144">private int check_buffer(struct magic_set *, struct magic_map *, const char *);</a>
+<a name="ln145">private void apprentice_unmap(struct magic_map *);</a>
+<a name="ln146">private int apprentice_compile(struct magic_set *, struct magic_map *,</a>
+<a name="ln147">    const char *);</a>
+<a name="ln148">private int check_format_type(const char *, int, const char **);</a>
+<a name="ln149">private int check_format(struct magic_set *, struct magic *);</a>
+<a name="ln150">private int get_op(char);</a>
+<a name="ln151">private int parse_mime(struct magic_set *, struct magic_entry *, const char *);</a>
+<a name="ln152">private int parse_strength(struct magic_set *, struct magic_entry *, const char *);</a>
+<a name="ln153">private int parse_apple(struct magic_set *, struct magic_entry *, const char *);</a>
+<a name="ln154">private int parse_ext(struct magic_set *, struct magic_entry *, const char *);</a>
+<a name="ln155"> </a>
+<a name="ln156"> </a>
+<a name="ln157">private size_t magicsize = sizeof(struct magic);</a>
+<a name="ln158"> </a>
+<a name="ln159">private const char usg_hdr[] = &quot;cont\toffset\ttype\topcode\tmask\tvalue\tdesc&quot;;</a>
+<a name="ln160"> </a>
+<a name="ln161">private struct {</a>
+<a name="ln162">	const char *name;</a>
+<a name="ln163">	size_t len;</a>
+<a name="ln164">	int (*fun)(struct magic_set *, struct magic_entry *, const char *);</a>
+<a name="ln165">} bang[] = {</a>
+<a name="ln166">#define	DECLARE_FIELD(name) { # name, sizeof(# name) - 1, parse_ ## name }</a>
+<a name="ln167">	DECLARE_FIELD(mime),</a>
+<a name="ln168">	DECLARE_FIELD(apple),</a>
+<a name="ln169">	DECLARE_FIELD(ext),</a>
+<a name="ln170">	DECLARE_FIELD(strength),</a>
+<a name="ln171">#undef	DECLARE_FIELD</a>
+<a name="ln172">	{ NULL, 0, NULL }</a>
+<a name="ln173">};</a>
+<a name="ln174"> </a>
+<a name="ln175">#ifdef COMPILE_ONLY</a>
+<a name="ln176"> </a>
+<a name="ln177">int main(int, char *[]);</a>
+<a name="ln178"> </a>
+<a name="ln179">int</a>
+<a name="ln180">main(int argc, char *argv[])</a>
+<a name="ln181">{</a>
+<a name="ln182">	int ret;</a>
+<a name="ln183">	struct magic_set *ms;</a>
+<a name="ln184">	char *progname;</a>
+<a name="ln185"> </a>
+<a name="ln186">	if ((progname = strrchr(argv[0], '/')) != NULL)</a>
+<a name="ln187">		progname++;</a>
+<a name="ln188">	else</a>
+<a name="ln189">		progname = argv[0];</a>
+<a name="ln190"> </a>
+<a name="ln191">	if (argc != 2) {</a>
+<a name="ln192">		(void)fprintf(stderr, &quot;Usage: %s file\n&quot;, progname);</a>
+<a name="ln193">		return 1;</a>
+<a name="ln194">	}</a>
+<a name="ln195"> </a>
+<a name="ln196">	if ((ms = magic_open(MAGIC_CHECK)) == NULL) {</a>
+<a name="ln197">		(void)fprintf(stderr, &quot;%s: %s\n&quot;, progname, strerror(errno));</a>
+<a name="ln198">		return 1;</a>
+<a name="ln199">	}</a>
+<a name="ln200">	ret = magic_compile(ms, argv[1]) == -1 ? 1 : 0;</a>
+<a name="ln201">	if (ret == 1)</a>
+<a name="ln202">		(void)fprintf(stderr, &quot;%s: %s\n&quot;, progname, magic_error(ms));</a>
+<a name="ln203">	magic_close(ms);</a>
+<a name="ln204">	return ret;</a>
+<a name="ln205">}</a>
+<a name="ln206">#endif /* COMPILE_ONLY */</a>
+<a name="ln207"> </a>
+<a name="ln208">struct type_tbl_s {</a>
+<a name="ln209">	const char name[16];</a>
+<a name="ln210">	const size_t len;</a>
+<a name="ln211">	const int type;</a>
+<a name="ln212">	const int format;</a>
+<a name="ln213">};</a>
+<a name="ln214"> </a>
+<a name="ln215">/*</a>
+<a name="ln216"> * XXX - the actual Single UNIX Specification says that &quot;long&quot; means &quot;long&quot;,</a>
+<a name="ln217"> * as in the C data type, but we treat it as meaning &quot;4-byte integer&quot;.</a>
+<a name="ln218"> * Given that the OS X version of file 5.04 did the same, I guess that passes</a>
+<a name="ln219"> * the actual test; having &quot;long&quot; be dependent on how big a &quot;long&quot; is on</a>
+<a name="ln220"> * the machine running &quot;file&quot; is silly.</a>
+<a name="ln221"> */</a>
+<a name="ln222">static const struct type_tbl_s type_tbl[] = {</a>
+<a name="ln223"># define XX(s)		s, (sizeof(s) - 1)</a>
+<a name="ln224"># define XX_NULL	&quot;&quot;, 0</a>
+<a name="ln225">	{ XX(&quot;invalid&quot;),	FILE_INVALID,		FILE_FMT_NONE },</a>
+<a name="ln226">	{ XX(&quot;byte&quot;),		FILE_BYTE,		FILE_FMT_NUM },</a>
+<a name="ln227">	{ XX(&quot;short&quot;),		FILE_SHORT,		FILE_FMT_NUM },</a>
+<a name="ln228">	{ XX(&quot;default&quot;),	FILE_DEFAULT,		FILE_FMT_NONE },</a>
+<a name="ln229">	{ XX(&quot;long&quot;),		FILE_LONG,		FILE_FMT_NUM },</a>
+<a name="ln230">	{ XX(&quot;string&quot;),		FILE_STRING,		FILE_FMT_STR },</a>
+<a name="ln231">	{ XX(&quot;date&quot;),		FILE_DATE,		FILE_FMT_STR },</a>
+<a name="ln232">	{ XX(&quot;beshort&quot;),	FILE_BESHORT,		FILE_FMT_NUM },</a>
+<a name="ln233">	{ XX(&quot;belong&quot;),		FILE_BELONG,		FILE_FMT_NUM },</a>
+<a name="ln234">	{ XX(&quot;bedate&quot;),		FILE_BEDATE,		FILE_FMT_STR },</a>
+<a name="ln235">	{ XX(&quot;leshort&quot;),	FILE_LESHORT,		FILE_FMT_NUM },</a>
+<a name="ln236">	{ XX(&quot;lelong&quot;),		FILE_LELONG,		FILE_FMT_NUM },</a>
+<a name="ln237">	{ XX(&quot;ledate&quot;),		FILE_LEDATE,		FILE_FMT_STR },</a>
+<a name="ln238">	{ XX(&quot;pstring&quot;),	FILE_PSTRING,		FILE_FMT_STR },</a>
+<a name="ln239">	{ XX(&quot;ldate&quot;),		FILE_LDATE,		FILE_FMT_STR },</a>
+<a name="ln240">	{ XX(&quot;beldate&quot;),	FILE_BELDATE,		FILE_FMT_STR },</a>
+<a name="ln241">	{ XX(&quot;leldate&quot;),	FILE_LELDATE,		FILE_FMT_STR },</a>
+<a name="ln242">	{ XX(&quot;regex&quot;),		FILE_REGEX,		FILE_FMT_STR },</a>
+<a name="ln243">	{ XX(&quot;bestring16&quot;),	FILE_BESTRING16,	FILE_FMT_STR },</a>
+<a name="ln244">	{ XX(&quot;lestring16&quot;),	FILE_LESTRING16,	FILE_FMT_STR },</a>
+<a name="ln245">	{ XX(&quot;search&quot;),		FILE_SEARCH,		FILE_FMT_STR },</a>
+<a name="ln246">	{ XX(&quot;medate&quot;),		FILE_MEDATE,		FILE_FMT_STR },</a>
+<a name="ln247">	{ XX(&quot;meldate&quot;),	FILE_MELDATE,		FILE_FMT_STR },</a>
+<a name="ln248">	{ XX(&quot;melong&quot;),		FILE_MELONG,		FILE_FMT_NUM },</a>
+<a name="ln249">	{ XX(&quot;quad&quot;),		FILE_QUAD,		FILE_FMT_QUAD },</a>
+<a name="ln250">	{ XX(&quot;lequad&quot;),		FILE_LEQUAD,		FILE_FMT_QUAD },</a>
+<a name="ln251">	{ XX(&quot;bequad&quot;),		FILE_BEQUAD,		FILE_FMT_QUAD },</a>
+<a name="ln252">	{ XX(&quot;qdate&quot;),		FILE_QDATE,		FILE_FMT_STR },</a>
+<a name="ln253">	{ XX(&quot;leqdate&quot;),	FILE_LEQDATE,		FILE_FMT_STR },</a>
+<a name="ln254">	{ XX(&quot;beqdate&quot;),	FILE_BEQDATE,		FILE_FMT_STR },</a>
+<a name="ln255">	{ XX(&quot;qldate&quot;),		FILE_QLDATE,		FILE_FMT_STR },</a>
+<a name="ln256">	{ XX(&quot;leqldate&quot;),	FILE_LEQLDATE,		FILE_FMT_STR },</a>
+<a name="ln257">	{ XX(&quot;beqldate&quot;),	FILE_BEQLDATE,		FILE_FMT_STR },</a>
+<a name="ln258">	{ XX(&quot;float&quot;),		FILE_FLOAT,		FILE_FMT_FLOAT },</a>
+<a name="ln259">	{ XX(&quot;befloat&quot;),	FILE_BEFLOAT,		FILE_FMT_FLOAT },</a>
+<a name="ln260">	{ XX(&quot;lefloat&quot;),	FILE_LEFLOAT,		FILE_FMT_FLOAT },</a>
+<a name="ln261">	{ XX(&quot;double&quot;),		FILE_DOUBLE,		FILE_FMT_DOUBLE },</a>
+<a name="ln262">	{ XX(&quot;bedouble&quot;),	FILE_BEDOUBLE,		FILE_FMT_DOUBLE },</a>
+<a name="ln263">	{ XX(&quot;ledouble&quot;),	FILE_LEDOUBLE,		FILE_FMT_DOUBLE },</a>
+<a name="ln264">	{ XX(&quot;leid3&quot;),		FILE_LEID3,		FILE_FMT_NUM },</a>
+<a name="ln265">	{ XX(&quot;beid3&quot;),		FILE_BEID3,		FILE_FMT_NUM },</a>
+<a name="ln266">	{ XX(&quot;indirect&quot;),	FILE_INDIRECT,		FILE_FMT_NUM },</a>
+<a name="ln267">	{ XX(&quot;qwdate&quot;),		FILE_QWDATE,		FILE_FMT_STR },</a>
+<a name="ln268">	{ XX(&quot;leqwdate&quot;),	FILE_LEQWDATE,		FILE_FMT_STR },</a>
+<a name="ln269">	{ XX(&quot;beqwdate&quot;),	FILE_BEQWDATE,		FILE_FMT_STR },</a>
+<a name="ln270">	{ XX(&quot;name&quot;),		FILE_NAME,		FILE_FMT_NONE },</a>
+<a name="ln271">	{ XX(&quot;use&quot;),		FILE_USE,		FILE_FMT_NONE },</a>
+<a name="ln272">	{ XX(&quot;clear&quot;),		FILE_CLEAR,		FILE_FMT_NONE },</a>
+<a name="ln273">	{ XX(&quot;der&quot;),		FILE_DER,		FILE_FMT_STR },</a>
+<a name="ln274">	{ XX_NULL,		FILE_INVALID,		FILE_FMT_NONE },</a>
+<a name="ln275">};</a>
+<a name="ln276"> </a>
+<a name="ln277">/*</a>
+<a name="ln278"> * These are not types, and cannot be preceded by &quot;u&quot; to make them</a>
+<a name="ln279"> * unsigned.</a>
+<a name="ln280"> */</a>
+<a name="ln281">static const struct type_tbl_s special_tbl[] = {</a>
+<a name="ln282">	{ XX(&quot;der&quot;),		FILE_DER,		FILE_FMT_STR },</a>
+<a name="ln283">	{ XX(&quot;name&quot;),		FILE_NAME,		FILE_FMT_STR },</a>
+<a name="ln284">	{ XX(&quot;use&quot;),		FILE_USE,		FILE_FMT_STR },</a>
+<a name="ln285">	{ XX_NULL,		FILE_INVALID,		FILE_FMT_NONE },</a>
+<a name="ln286">};</a>
+<a name="ln287"># undef XX</a>
+<a name="ln288"># undef XX_NULL</a>
+<a name="ln289"> </a>
+<a name="ln290">private int</a>
+<a name="ln291">get_type(const struct type_tbl_s *tbl, const char *l, const char **t)</a>
+<a name="ln292">{</a>
+<a name="ln293">	const struct type_tbl_s *p;</a>
+<a name="ln294"> </a>
+<a name="ln295">	for (p = tbl; p-&gt;len; p++) {</a>
+<a name="ln296">		if (strncmp(l, p-&gt;name, p-&gt;len) == 0) {</a>
+<a name="ln297">			if (t)</a>
+<a name="ln298">				*t = l + p-&gt;len;</a>
+<a name="ln299">			break;</a>
+<a name="ln300">		}</a>
+<a name="ln301">	}</a>
+<a name="ln302">	return p-&gt;type;</a>
+<a name="ln303">}</a>
+<a name="ln304"> </a>
+<a name="ln305">private int</a>
+<a name="ln306">get_standard_integer_type(const char *l, const char **t)</a>
+<a name="ln307">{</a>
+<a name="ln308">	int type;</a>
+<a name="ln309"> </a>
+<a name="ln310">	if (isalpha((unsigned char)l[1])) {</a>
+<a name="ln311">		switch (l[1]) {</a>
+<a name="ln312">		case 'C':</a>
+<a name="ln313">			/* &quot;dC&quot; and &quot;uC&quot; */</a>
+<a name="ln314">			type = FILE_BYTE;</a>
+<a name="ln315">			break;</a>
+<a name="ln316">		case 'S':</a>
+<a name="ln317">			/* &quot;dS&quot; and &quot;uS&quot; */</a>
+<a name="ln318">			type = FILE_SHORT;</a>
+<a name="ln319">			break;</a>
+<a name="ln320">		case 'I':</a>
+<a name="ln321">		case 'L':</a>
+<a name="ln322">			/*</a>
+<a name="ln323">			 * &quot;dI&quot;, &quot;dL&quot;, &quot;uI&quot;, and &quot;uL&quot;.</a>
+<a name="ln324">			 *</a>
+<a name="ln325">			 * XXX - the actual Single UNIX Specification says</a>
+<a name="ln326">			 * that &quot;L&quot; means &quot;long&quot;, as in the C data type,</a>
+<a name="ln327">			 * but we treat it as meaning &quot;4-byte integer&quot;.</a>
+<a name="ln328">			 * Given that the OS X version of file 5.04 did</a>
+<a name="ln329">			 * the same, I guess that passes the actual SUS</a>
+<a name="ln330">			 * validation suite; having &quot;dL&quot; be dependent on</a>
+<a name="ln331">			 * how big a &quot;long&quot; is on the machine running</a>
+<a name="ln332">			 * &quot;file&quot; is silly.</a>
+<a name="ln333">			 */</a>
+<a name="ln334">			type = FILE_LONG;</a>
+<a name="ln335">			break;</a>
+<a name="ln336">		case 'Q':</a>
+<a name="ln337">			/* &quot;dQ&quot; and &quot;uQ&quot; */</a>
+<a name="ln338">			type = FILE_QUAD;</a>
+<a name="ln339">			break;</a>
+<a name="ln340">		default:</a>
+<a name="ln341">			/* &quot;d{anything else}&quot;, &quot;u{anything else}&quot; */</a>
+<a name="ln342">			return FILE_INVALID;</a>
+<a name="ln343">		}</a>
+<a name="ln344">		l += 2;</a>
+<a name="ln345">	} else if (isdigit((unsigned char)l[1])) {</a>
+<a name="ln346">		/*</a>
+<a name="ln347">		 * &quot;d{num}&quot; and &quot;u{num}&quot;; we only support {num} values</a>
+<a name="ln348">		 * of 1, 2, 4, and 8 - the Single UNIX Specification</a>
+<a name="ln349">		 * doesn't say anything about whether arbitrary</a>
+<a name="ln350">		 * values should be supported, but both the Solaris 10</a>
+<a name="ln351">		 * and OS X Mountain Lion versions of file passed the</a>
+<a name="ln352">		 * Single UNIX Specification validation suite, and</a>
+<a name="ln353">		 * neither of them support values bigger than 8 or</a>
+<a name="ln354">		 * non-power-of-2 values.</a>
+<a name="ln355">		 */</a>
+<a name="ln356">		if (isdigit((unsigned char)l[2])) {</a>
+<a name="ln357">			/* Multi-digit, so &gt; 9 */</a>
+<a name="ln358">			return FILE_INVALID;</a>
+<a name="ln359">		}</a>
+<a name="ln360">		switch (l[1]) {</a>
+<a name="ln361">		case '1':</a>
+<a name="ln362">			type = FILE_BYTE;</a>
+<a name="ln363">			break;</a>
+<a name="ln364">		case '2':</a>
+<a name="ln365">			type = FILE_SHORT;</a>
+<a name="ln366">			break;</a>
+<a name="ln367">		case '4':</a>
+<a name="ln368">			type = FILE_LONG;</a>
+<a name="ln369">			break;</a>
+<a name="ln370">		case '8':</a>
+<a name="ln371">			type = FILE_QUAD;</a>
+<a name="ln372">			break;</a>
+<a name="ln373">		default:</a>
+<a name="ln374">			/* XXX - what about 3, 5, 6, or 7? */</a>
+<a name="ln375">			return FILE_INVALID;</a>
+<a name="ln376">		}</a>
+<a name="ln377">		l += 2;</a>
+<a name="ln378">	} else {</a>
+<a name="ln379">		/*</a>
+<a name="ln380">		 * &quot;d&quot; or &quot;u&quot; by itself.</a>
+<a name="ln381">		 */</a>
+<a name="ln382">		type = FILE_LONG;</a>
+<a name="ln383">		++l;</a>
+<a name="ln384">	}</a>
+<a name="ln385">	if (t)</a>
+<a name="ln386">		*t = l;</a>
+<a name="ln387">	return type;</a>
+<a name="ln388">}</a>
+<a name="ln389"> </a>
+<a name="ln390">private void</a>
+<a name="ln391">init_file_tables(void)</a>
+<a name="ln392">{</a>
+<a name="ln393">	static int done = 0;</a>
+<a name="ln394">	const struct type_tbl_s *p;</a>
+<a name="ln395"> </a>
+<a name="ln396">	if (done)</a>
+<a name="ln397">		return;</a>
+<a name="ln398">	done++;</a>
+<a name="ln399"> </a>
+<a name="ln400">	for (p = type_tbl; p-&gt;len; p++) {</a>
+<a name="ln401">		assert(p-&gt;type &lt; FILE_NAMES_SIZE);</a>
+<a name="ln402">		file_names[p-&gt;type] = p-&gt;name;</a>
+<a name="ln403">		file_formats[p-&gt;type] = p-&gt;format;</a>
+<a name="ln404">	}</a>
+<a name="ln405">	assert(p - type_tbl == FILE_NAMES_SIZE);</a>
+<a name="ln406">}</a>
+<a name="ln407"> </a>
+<a name="ln408">private int</a>
+<a name="ln409">add_mlist(struct mlist *mlp, struct magic_map *map, size_t idx)</a>
+<a name="ln410">{</a>
+<a name="ln411">	struct mlist *ml;</a>
+<a name="ln412"> </a>
+<a name="ln413">	mlp-&gt;map = NULL;</a>
+<a name="ln414">	if ((ml = CAST(struct mlist *, malloc(sizeof(*ml)))) == NULL)</a>
+<a name="ln415">		return -1;</a>
+<a name="ln416"> </a>
+<a name="ln417">	ml-&gt;map = idx == 0 ? map : NULL;</a>
+<a name="ln418">	ml-&gt;magic = map-&gt;magic[idx];</a>
+<a name="ln419">	ml-&gt;nmagic = map-&gt;nmagic[idx];</a>
+<a name="ln420"> </a>
+<a name="ln421">	mlp-&gt;prev-&gt;next = ml;</a>
+<a name="ln422">	ml-&gt;prev = mlp-&gt;prev;</a>
+<a name="ln423">	ml-&gt;next = mlp;</a>
+<a name="ln424">	mlp-&gt;prev = ml;</a>
+<a name="ln425">	return 0;</a>
+<a name="ln426">}</a>
+<a name="ln427"> </a>
+<a name="ln428">/*</a>
+<a name="ln429"> * Handle one file or directory.</a>
+<a name="ln430"> */</a>
+<a name="ln431">private int</a>
+<a name="ln432">apprentice_1(struct magic_set *ms, const char *fn, int action)</a>
+<a name="ln433">{</a>
+<a name="ln434">	struct magic_map *map;</a>
+<a name="ln435">#ifndef COMPILE_ONLY</a>
+<a name="ln436">	struct mlist *ml;</a>
+<a name="ln437">	size_t i;</a>
+<a name="ln438">#endif</a>
+<a name="ln439"> </a>
+<a name="ln440">	if (magicsize != FILE_MAGICSIZE) {</a>
+<a name="ln441">		file_error(ms, 0, &quot;magic element size %lu != %lu&quot;,</a>
+<a name="ln442">		    (unsigned long)sizeof(*map-&gt;magic[0]),</a>
+<a name="ln443">		    (unsigned long)FILE_MAGICSIZE);</a>
+<a name="ln444">		return -1;</a>
+<a name="ln445">	}</a>
+<a name="ln446"> </a>
+<a name="ln447">	if (action == FILE_COMPILE) {</a>
+<a name="ln448">		map = apprentice_load(ms, fn, action);</a>
+<a name="ln449">		if (map == NULL)</a>
+<a name="ln450">			return -1;</a>
+<a name="ln451">		return apprentice_compile(ms, map, fn);</a>
+<a name="ln452">	}</a>
+<a name="ln453"> </a>
+<a name="ln454">#ifndef COMPILE_ONLY</a>
+<a name="ln455">	map = apprentice_map(ms, fn);</a>
+<a name="ln456">	if (map == (struct magic_map *)-1)</a>
+<a name="ln457">		return -1;</a>
+<a name="ln458">	if (map == NULL) {</a>
+<a name="ln459">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln460">			file_magwarn(ms, &quot;using regular magic file `%s'&quot;, fn);</a>
+<a name="ln461">		map = apprentice_load(ms, fn, action);</a>
+<a name="ln462">		if (map == NULL)</a>
+<a name="ln463">			return -1;</a>
+<a name="ln464">	}</a>
+<a name="ln465"> </a>
+<a name="ln466">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln467">		if (add_mlist(ms-&gt;mlist[i], map, i) == -1) {</a>
+<a name="ln468">			file_oomem(ms, sizeof(*ml));</a>
+<a name="ln469">			return -1;</a>
+<a name="ln470">		}</a>
+<a name="ln471">	}</a>
+<a name="ln472"> </a>
+<a name="ln473">	if (action == FILE_LIST) {</a>
+<a name="ln474">		for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln475">			printf(&quot;Set %&quot; SIZE_T_FORMAT &quot;u:\nBinary patterns:\n&quot;,</a>
+<a name="ln476">			    i);</a>
+<a name="ln477">			apprentice_list(ms-&gt;mlist[i], BINTEST);</a>
+<a name="ln478">			printf(&quot;Text patterns:\n&quot;);</a>
+<a name="ln479">			apprentice_list(ms-&gt;mlist[i], TEXTTEST);</a>
+<a name="ln480">		}</a>
+<a name="ln481">	}</a>
+<a name="ln482">	return 0;</a>
+<a name="ln483">#else</a>
+<a name="ln484">	return 0;</a>
+<a name="ln485">#endif /* COMPILE_ONLY */</a>
+<a name="ln486">}</a>
+<a name="ln487"> </a>
+<a name="ln488">protected void</a>
+<a name="ln489">file_ms_free(struct magic_set *ms)</a>
+<a name="ln490">{</a>
+<a name="ln491">	size_t i;</a>
+<a name="ln492">	if (ms == NULL)</a>
+<a name="ln493">		return;</a>
+<a name="ln494">	for (i = 0; i &lt; MAGIC_SETS; i++)</a>
+<a name="ln495">		mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln496">	free(ms-&gt;o.pbuf);</a>
+<a name="ln497">	free(ms-&gt;o.buf);</a>
+<a name="ln498">	free(ms-&gt;c.li);</a>
+<a name="ln499">	free(ms);</a>
+<a name="ln500">}</a>
+<a name="ln501"> </a>
+<a name="ln502">protected struct magic_set *</a>
+<a name="ln503">file_ms_alloc(int flags)</a>
+<a name="ln504">{</a>
+<a name="ln505">	struct magic_set *ms;</a>
+<a name="ln506">	size_t i, len;</a>
+<a name="ln507"> </a>
+<a name="ln508">	if ((ms = CAST(struct magic_set *, calloc((size_t)1,</a>
+<a name="ln509">	    sizeof(struct magic_set)))) == NULL)</a>
+<a name="ln510">		return NULL;</a>
+<a name="ln511"> </a>
+<a name="ln512">	if (magic_setflags(ms, flags) == -1) {</a>
+<a name="ln513">		errno = EINVAL;</a>
+<a name="ln514">		goto free;</a>
+<a name="ln515">	}</a>
+<a name="ln516"> </a>
+<a name="ln517">	ms-&gt;o.buf = ms-&gt;o.pbuf = NULL;</a>
+<a name="ln518">	len = (ms-&gt;c.len = 10) * sizeof(*ms-&gt;c.li);</a>
+<a name="ln519"> </a>
+<a name="ln520">	if ((ms-&gt;c.li = CAST(struct level_info *, malloc(len))) == NULL)</a>
+<a name="ln521">		goto free;</a>
+<a name="ln522"> </a>
+<a name="ln523">	ms-&gt;event_flags = 0;</a>
+<a name="ln524">	ms-&gt;error = -1;</a>
+<a name="ln525">	for (i = 0; i &lt; MAGIC_SETS; i++)</a>
+<a name="ln526">		ms-&gt;mlist[i] = NULL;</a>
+<a name="ln527">	ms-&gt;file = &quot;unknown&quot;;</a>
+<a name="ln528">	ms-&gt;line = 0;</a>
+<a name="ln529">	ms-&gt;indir_max = FILE_INDIR_MAX;</a>
+<a name="ln530">	ms-&gt;name_max = FILE_NAME_MAX;</a>
+<a name="ln531">	ms-&gt;elf_shnum_max = FILE_ELF_SHNUM_MAX;</a>
+<a name="ln532">	ms-&gt;elf_phnum_max = FILE_ELF_PHNUM_MAX;</a>
+<a name="ln533">	ms-&gt;elf_notes_max = FILE_ELF_NOTES_MAX;</a>
+<a name="ln534">	ms-&gt;regex_max = FILE_REGEX_MAX;</a>
+<a name="ln535">	ms-&gt;bytes_max = FILE_BYTES_MAX;</a>
+<a name="ln536">	return ms;</a>
+<a name="ln537">free:</a>
+<a name="ln538">	free(ms);</a>
+<a name="ln539">	return NULL;</a>
+<a name="ln540">}</a>
+<a name="ln541"> </a>
+<a name="ln542">private void</a>
+<a name="ln543">apprentice_unmap(struct magic_map *map)</a>
+<a name="ln544">{</a>
+<a name="ln545">	size_t i;</a>
+<a name="ln546">	if (map == NULL)</a>
+<a name="ln547">		return;</a>
+<a name="ln548"> </a>
+<a name="ln549">	switch (map-&gt;type) {</a>
+<a name="ln550">	case MAP_TYPE_USER:</a>
+<a name="ln551">		break;</a>
+<a name="ln552">	case MAP_TYPE_MALLOC:</a>
+<a name="ln553">		for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln554">			void *b = map-&gt;magic[i];</a>
+<a name="ln555">			void *p = map-&gt;p;</a>
+<a name="ln556">			if (CAST(char *, b) &gt;= CAST(char *, p) &amp;&amp;</a>
+<a name="ln557">			    CAST(char *, b) &lt;= CAST(char *, p) + map-&gt;len)</a>
+<a name="ln558">				continue;</a>
+<a name="ln559">			free(map-&gt;magic[i]);</a>
+<a name="ln560">		}</a>
+<a name="ln561">		free(map-&gt;p);</a>
+<a name="ln562">		break;</a>
+<a name="ln563">#ifdef QUICK</a>
+<a name="ln564">	case MAP_TYPE_MMAP:</a>
+<a name="ln565">		if (map-&gt;p &amp;&amp; map-&gt;p != MAP_FAILED)</a>
+<a name="ln566">			(void)munmap(map-&gt;p, map-&gt;len);</a>
+<a name="ln567">		break;</a>
+<a name="ln568">#endif</a>
+<a name="ln569">	default:</a>
+<a name="ln570">		abort();</a>
+<a name="ln571">	}</a>
+<a name="ln572">	free(map);</a>
+<a name="ln573">}</a>
+<a name="ln574"> </a>
+<a name="ln575">private struct mlist *</a>
+<a name="ln576">mlist_alloc(void)</a>
+<a name="ln577">{</a>
+<a name="ln578">	struct mlist *mlist;</a>
+<a name="ln579">	if ((mlist = CAST(struct mlist *, calloc(1, sizeof(*mlist)))) == NULL) {</a>
+<a name="ln580">		return NULL;</a>
+<a name="ln581">	}</a>
+<a name="ln582">	mlist-&gt;next = mlist-&gt;prev = mlist;</a>
+<a name="ln583">	return mlist;</a>
+<a name="ln584">}</a>
+<a name="ln585"> </a>
+<a name="ln586">private void</a>
+<a name="ln587">mlist_free(struct mlist *mlist)</a>
+<a name="ln588">{</a>
+<a name="ln589">	struct mlist *ml, *next;</a>
+<a name="ln590"> </a>
+<a name="ln591">	if (mlist == NULL)</a>
+<a name="ln592">		return;</a>
+<a name="ln593"> </a>
+<a name="ln594">	ml = mlist-&gt;next;</a>
+<a name="ln595">	for (ml = mlist-&gt;next; (next = ml-&gt;next) != NULL; ml = next) {</a>
+<a name="ln596">		if (ml-&gt;map)</a>
+<a name="ln597">			apprentice_unmap(CAST(struct magic_map *, ml-&gt;map));</a>
+<a name="ln598">		free(ml);</a>
+<a name="ln599">		if (ml == mlist)</a>
+<a name="ln600">			break;</a>
+<a name="ln601">	}</a>
+<a name="ln602">}</a>
+<a name="ln603"> </a>
+<a name="ln604">#ifndef COMPILE_ONLY</a>
+<a name="ln605">/* void **bufs: an array of compiled magic files */</a>
+<a name="ln606">protected int</a>
+<a name="ln607">buffer_apprentice(struct magic_set *ms, struct magic **bufs,</a>
+<a name="ln608">    size_t *sizes, size_t nbufs)</a>
+<a name="ln609">{</a>
+<a name="ln610">	size_t i, j;</a>
+<a name="ln611">	struct mlist *ml;</a>
+<a name="ln612">	struct magic_map *map;</a>
+<a name="ln613"> </a>
+<a name="ln614">	if (nbufs == 0)</a>
+<a name="ln615">		return -1;</a>
+<a name="ln616"> </a>
+<a name="ln617">	if (ms-&gt;mlist[0] != NULL)</a>
+<a name="ln618">		file_reset(ms);</a>
+<a name="ln619"> </a>
+<a name="ln620">	init_file_tables();</a>
+<a name="ln621"> </a>
+<a name="ln622">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln623">		mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln624">		if ((ms-&gt;mlist[i] = mlist_alloc()) == NULL) {</a>
+<a name="ln625">			file_oomem(ms, sizeof(*ms-&gt;mlist[i]));</a>
+<a name="ln626">			goto fail;</a>
+<a name="ln627">		}</a>
+<a name="ln628">	}</a>
+<a name="ln629"> </a>
+<a name="ln630">	for (i = 0; i &lt; nbufs; i++) {</a>
+<a name="ln631">		map = apprentice_buf(ms, bufs[i], sizes[i]);</a>
+<a name="ln632">		if (map == NULL)</a>
+<a name="ln633">			goto fail;</a>
+<a name="ln634"> </a>
+<a name="ln635">		for (j = 0; j &lt; MAGIC_SETS; j++) {</a>
+<a name="ln636">			if (add_mlist(ms-&gt;mlist[j], map, j) == -1) {</a>
+<a name="ln637">				file_oomem(ms, sizeof(*ml));</a>
+<a name="ln638">				goto fail;</a>
+<a name="ln639">			}</a>
+<a name="ln640">		}</a>
+<a name="ln641">	}</a>
+<a name="ln642"> </a>
+<a name="ln643">	return 0;</a>
+<a name="ln644">fail:</a>
+<a name="ln645">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln646">		mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln647">		ms-&gt;mlist[i] = NULL;</a>
+<a name="ln648">	}</a>
+<a name="ln649">	return -1;</a>
+<a name="ln650">}</a>
+<a name="ln651">#endif</a>
+<a name="ln652"> </a>
+<a name="ln653">/* const char *fn: list of magic files and directories */</a>
+<a name="ln654">protected int</a>
+<a name="ln655">file_apprentice(struct magic_set *ms, const char *fn, int action)</a>
+<a name="ln656">{</a>
+<a name="ln657">	char *p, *mfn;</a>
+<a name="ln658">	int file_err, errs = -1;</a>
+<a name="ln659">	size_t i;</a>
+<a name="ln660"> </a>
+<a name="ln661">	if (ms-&gt;mlist[0] != NULL)</a>
+<a name="ln662">		file_reset(ms);</a>
+<a name="ln663"> </a>
+<a name="ln664">	if ((fn = magic_getpath(fn, action)) == NULL)</a>
+<a name="ln665">		return -1;</a>
+<a name="ln666"> </a>
+<a name="ln667">	init_file_tables();</a>
+<a name="ln668"> </a>
+<a name="ln669">	if ((mfn = strdup(fn)) == NULL) {</a>
+<a name="ln670">		file_oomem(ms, strlen(fn));</a>
+<a name="ln671">		return -1;</a>
+<a name="ln672">	}</a>
+<a name="ln673"> </a>
+<a name="ln674">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln675">		mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln676">		if ((ms-&gt;mlist[i] = mlist_alloc()) == NULL) {</a>
+<a name="ln677">			file_oomem(ms, sizeof(*ms-&gt;mlist[i]));</a>
+<a name="ln678">			while (i-- &gt; 0) {</a>
+<a name="ln679">				mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln680">				ms-&gt;mlist[i] = NULL;</a>
+<a name="ln681">			}</a>
+<a name="ln682">			free(mfn);</a>
+<a name="ln683">			return -1;</a>
+<a name="ln684">		}</a>
+<a name="ln685">	}</a>
+<a name="ln686">	fn = mfn;</a>
+<a name="ln687"> </a>
+<a name="ln688">	while (fn) {</a>
+<a name="ln689">		p = strchr(fn, PATHSEP);</a>
+<a name="ln690">		if (p)</a>
+<a name="ln691">			*p++ = '\0';</a>
+<a name="ln692">		if (*fn == '\0')</a>
+<a name="ln693">			break;</a>
+<a name="ln694">		file_err = apprentice_1(ms, fn, action);</a>
+<a name="ln695">		errs = MAX(errs, file_err);</a>
+<a name="ln696">		fn = p;</a>
+<a name="ln697">	}</a>
+<a name="ln698"> </a>
+<a name="ln699">	free(mfn);</a>
+<a name="ln700"> </a>
+<a name="ln701">	if (errs == -1) {</a>
+<a name="ln702">		for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln703">			mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln704">			ms-&gt;mlist[i] = NULL;</a>
+<a name="ln705">		}</a>
+<a name="ln706">		file_error(ms, 0, &quot;could not find any valid magic files!&quot;);</a>
+<a name="ln707">		return -1;</a>
+<a name="ln708">	}</a>
+<a name="ln709"> </a>
+<a name="ln710">#if 0</a>
+<a name="ln711">	/*</a>
+<a name="ln712">	 * Always leave the database loaded</a>
+<a name="ln713">	 */</a>
+<a name="ln714">	if (action == FILE_LOAD)</a>
+<a name="ln715">		return 0;</a>
+<a name="ln716"> </a>
+<a name="ln717">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln718">		mlist_free(ms-&gt;mlist[i]);</a>
+<a name="ln719">		ms-&gt;mlist[i] = NULL;</a>
+<a name="ln720">	}</a>
+<a name="ln721">#endif</a>
+<a name="ln722"> </a>
+<a name="ln723">	switch (action) {</a>
+<a name="ln724">	case FILE_LOAD:</a>
+<a name="ln725">	case FILE_COMPILE:</a>
+<a name="ln726">	case FILE_CHECK:</a>
+<a name="ln727">	case FILE_LIST:</a>
+<a name="ln728">		return 0;</a>
+<a name="ln729">	default:</a>
+<a name="ln730">		file_error(ms, 0, &quot;Invalid action %d&quot;, action);</a>
+<a name="ln731">		return -1;</a>
+<a name="ln732">	}</a>
+<a name="ln733">}</a>
+<a name="ln734"> </a>
+<a name="ln735">/*</a>
+<a name="ln736"> * Compute the real length of a magic expression, for the purposes</a>
+<a name="ln737"> * of determining how &quot;strong&quot; a magic expression is (approximating</a>
+<a name="ln738"> * how specific its matches are):</a>
+<a name="ln739"> *	- magic characters count 0 unless escaped.</a>
+<a name="ln740"> *	- [] expressions count 1</a>
+<a name="ln741"> *	- {} expressions count 0</a>
+<a name="ln742"> *	- regular characters or escaped magic characters count 1</a>
+<a name="ln743"> *	- 0 length expressions count as one</a>
+<a name="ln744"> */</a>
+<a name="ln745">private size_t</a>
+<a name="ln746">nonmagic(const char *str)</a>
+<a name="ln747">{</a>
+<a name="ln748">	const char *p;</a>
+<a name="ln749">	size_t rv = 0;</a>
+<a name="ln750"> </a>
+<a name="ln751">	for (p = str; *p; p++)</a>
+<a name="ln752">		switch (*p) {</a>
+<a name="ln753">		case '\\':	/* Escaped anything counts 1 */</a>
+<a name="ln754">			if (!*++p)</a>
+<a name="ln755">				p--;</a>
+<a name="ln756">			rv++;</a>
+<a name="ln757">			continue;</a>
+<a name="ln758">		case '?':	/* Magic characters count 0 */</a>
+<a name="ln759">		case '*':</a>
+<a name="ln760">		case '.':</a>
+<a name="ln761">		case '+':</a>
+<a name="ln762">		case '^':</a>
+<a name="ln763">		case '$':</a>
+<a name="ln764">			continue;</a>
+<a name="ln765">		case '[':	/* Bracketed expressions count 1 the ']' */</a>
+<a name="ln766">			while (*p &amp;&amp; *p != ']')</a>
+<a name="ln767">				p++;</a>
+<a name="ln768">			p--;</a>
+<a name="ln769">			continue;</a>
+<a name="ln770">		case '{':	/* Braced expressions count 0 */</a>
+<a name="ln771">			while (*p &amp;&amp; *p != '}')</a>
+<a name="ln772">				p++;</a>
+<a name="ln773">			if (!*p)</a>
+<a name="ln774">				p--;</a>
+<a name="ln775">			continue;</a>
+<a name="ln776">		default:	/* Anything else counts 1 */</a>
+<a name="ln777">			rv++;</a>
+<a name="ln778">			continue;</a>
+<a name="ln779">		}</a>
+<a name="ln780"> </a>
+<a name="ln781">	return rv == 0 ? 1 : rv;	/* Return at least 1 */</a>
+<a name="ln782">}</a>
+<a name="ln783"> </a>
+<a name="ln784">/*</a>
+<a name="ln785"> * Get weight of this magic entry, for sorting purposes.</a>
+<a name="ln786"> */</a>
+<a name="ln787">private size_t</a>
+<a name="ln788">apprentice_magic_strength(const struct magic *m)</a>
+<a name="ln789">{</a>
+<a name="ln790">#define MULT 10</a>
+<a name="ln791">	size_t v, val = 2 * MULT;	/* baseline strength */</a>
+<a name="ln792"> </a>
+<a name="ln793">	switch (m-&gt;type) {</a>
+<a name="ln794">	case FILE_DEFAULT:	/* make sure this sorts last */</a>
+<a name="ln795">		if (m-&gt;factor_op != FILE_FACTOR_OP_NONE)</a>
+<a name="ln796">			abort();</a>
+<a name="ln797">		return 0;</a>
+<a name="ln798"> </a>
+<a name="ln799">	case FILE_BYTE:</a>
+<a name="ln800">		val += 1 * MULT;</a>
+<a name="ln801">		break;</a>
+<a name="ln802"> </a>
+<a name="ln803">	case FILE_SHORT:</a>
+<a name="ln804">	case FILE_LESHORT:</a>
+<a name="ln805">	case FILE_BESHORT:</a>
+<a name="ln806">		val += 2 * MULT;</a>
+<a name="ln807">		break;</a>
+<a name="ln808"> </a>
+<a name="ln809">	case FILE_LONG:</a>
+<a name="ln810">	case FILE_LELONG:</a>
+<a name="ln811">	case FILE_BELONG:</a>
+<a name="ln812">	case FILE_MELONG:</a>
+<a name="ln813">		val += 4 * MULT;</a>
+<a name="ln814">		break;</a>
+<a name="ln815"> </a>
+<a name="ln816">	case FILE_PSTRING:</a>
+<a name="ln817">	case FILE_STRING:</a>
+<a name="ln818">		val += m-&gt;vallen * MULT;</a>
+<a name="ln819">		break;</a>
+<a name="ln820"> </a>
+<a name="ln821">	case FILE_BESTRING16:</a>
+<a name="ln822">	case FILE_LESTRING16:</a>
+<a name="ln823">		val += m-&gt;vallen * MULT / 2;</a>
+<a name="ln824">		break;</a>
+<a name="ln825"> </a>
+<a name="ln826">	case FILE_SEARCH:</a>
+<a name="ln827">		val += m-&gt;vallen * MAX(MULT / m-&gt;vallen, 1);</a>
+<a name="ln828">		break;</a>
+<a name="ln829"> </a>
+<a name="ln830">	case FILE_REGEX:</a>
+<a name="ln831">		v = nonmagic(m-&gt;value.s);</a>
+<a name="ln832">		val += v * MAX(MULT / v, 1);</a>
+<a name="ln833">		break;</a>
+<a name="ln834"> </a>
+<a name="ln835">	case FILE_DATE:</a>
+<a name="ln836">	case FILE_LEDATE:</a>
+<a name="ln837">	case FILE_BEDATE:</a>
+<a name="ln838">	case FILE_MEDATE:</a>
+<a name="ln839">	case FILE_LDATE:</a>
+<a name="ln840">	case FILE_LELDATE:</a>
+<a name="ln841">	case FILE_BELDATE:</a>
+<a name="ln842">	case FILE_MELDATE:</a>
+<a name="ln843">	case FILE_FLOAT:</a>
+<a name="ln844">	case FILE_BEFLOAT:</a>
+<a name="ln845">	case FILE_LEFLOAT:</a>
+<a name="ln846">		val += 4 * MULT;</a>
+<a name="ln847">		break;</a>
+<a name="ln848"> </a>
+<a name="ln849">	case FILE_QUAD:</a>
+<a name="ln850">	case FILE_BEQUAD:</a>
+<a name="ln851">	case FILE_LEQUAD:</a>
+<a name="ln852">	case FILE_QDATE:</a>
+<a name="ln853">	case FILE_LEQDATE:</a>
+<a name="ln854">	case FILE_BEQDATE:</a>
+<a name="ln855">	case FILE_QLDATE:</a>
+<a name="ln856">	case FILE_LEQLDATE:</a>
+<a name="ln857">	case FILE_BEQLDATE:</a>
+<a name="ln858">	case FILE_QWDATE:</a>
+<a name="ln859">	case FILE_LEQWDATE:</a>
+<a name="ln860">	case FILE_BEQWDATE:</a>
+<a name="ln861">	case FILE_DOUBLE:</a>
+<a name="ln862">	case FILE_BEDOUBLE:</a>
+<a name="ln863">	case FILE_LEDOUBLE:</a>
+<a name="ln864">		val += 8 * MULT;</a>
+<a name="ln865">		break;</a>
+<a name="ln866"> </a>
+<a name="ln867">	case FILE_INDIRECT:</a>
+<a name="ln868">	case FILE_NAME:</a>
+<a name="ln869">	case FILE_USE:</a>
+<a name="ln870">		break;</a>
+<a name="ln871"> </a>
+<a name="ln872">	case FILE_DER:</a>
+<a name="ln873">		val += MULT;</a>
+<a name="ln874">		break;</a>
+<a name="ln875"> </a>
+<a name="ln876">	default:</a>
+<a name="ln877">		(void)fprintf(stderr, &quot;Bad type %d\n&quot;, m-&gt;type);</a>
+<a name="ln878">		abort();</a>
+<a name="ln879">	}</a>
+<a name="ln880"> </a>
+<a name="ln881">	switch (m-&gt;reln) {</a>
+<a name="ln882">	case 'x':	/* matches anything penalize */</a>
+<a name="ln883">	case '!':       /* matches almost anything penalize */</a>
+<a name="ln884">		val = 0;</a>
+<a name="ln885">		break;</a>
+<a name="ln886"> </a>
+<a name="ln887">	case '=':	/* Exact match, prefer */</a>
+<a name="ln888">		val += MULT;</a>
+<a name="ln889">		break;</a>
+<a name="ln890"> </a>
+<a name="ln891">	case '&gt;':</a>
+<a name="ln892">	case '&lt;':	/* comparison match reduce strength */</a>
+<a name="ln893">		val -= 2 * MULT;</a>
+<a name="ln894">		break;</a>
+<a name="ln895"> </a>
+<a name="ln896">	case '^':</a>
+<a name="ln897">	case '&amp;':	/* masking bits, we could count them too */</a>
+<a name="ln898">		val -= MULT;</a>
+<a name="ln899">		break;</a>
+<a name="ln900"> </a>
+<a name="ln901">	default:</a>
+<a name="ln902">		(void)fprintf(stderr, &quot;Bad relation %c\n&quot;, m-&gt;reln);</a>
+<a name="ln903">		abort();</a>
+<a name="ln904">	}</a>
+<a name="ln905"> </a>
+<a name="ln906">	if (val == 0)	/* ensure we only return 0 for FILE_DEFAULT */</a>
+<a name="ln907">		val = 1;</a>
+<a name="ln908"> </a>
+<a name="ln909">	switch (m-&gt;factor_op) {</a>
+<a name="ln910">	case FILE_FACTOR_OP_NONE:</a>
+<a name="ln911">		break;</a>
+<a name="ln912">	case FILE_FACTOR_OP_PLUS:</a>
+<a name="ln913">		val += m-&gt;factor;</a>
+<a name="ln914">		break;</a>
+<a name="ln915">	case FILE_FACTOR_OP_MINUS:</a>
+<a name="ln916">		val -= m-&gt;factor;</a>
+<a name="ln917">		break;</a>
+<a name="ln918">	case FILE_FACTOR_OP_TIMES:</a>
+<a name="ln919">		val *= m-&gt;factor;</a>
+<a name="ln920">		break;</a>
+<a name="ln921">	case FILE_FACTOR_OP_DIV:</a>
+<a name="ln922">		val /= m-&gt;factor;</a>
+<a name="ln923">		break;</a>
+<a name="ln924">	default:</a>
+<a name="ln925">		abort();</a>
+<a name="ln926">	}</a>
+<a name="ln927"> </a>
+<a name="ln928">	/*</a>
+<a name="ln929">	 * Magic entries with no description get a bonus because they depend</a>
+<a name="ln930">	 * on subsequent magic entries to print something.</a>
+<a name="ln931">	 */</a>
+<a name="ln932">	if (m-&gt;desc[0] == '\0')</a>
+<a name="ln933">		val++;</a>
+<a name="ln934">	return val;</a>
+<a name="ln935">}</a>
+<a name="ln936"> </a>
+<a name="ln937">/*  </a>
+<a name="ln938"> * Sort callback for sorting entries by &quot;strength&quot; (basically length)</a>
+<a name="ln939"> */</a>
+<a name="ln940">private int</a>
+<a name="ln941">apprentice_sort(const void *a, const void *b)</a>
+<a name="ln942">{</a>
+<a name="ln943">	const struct magic_entry *ma = CAST(const struct magic_entry *, a);</a>
+<a name="ln944">	const struct magic_entry *mb = CAST(const struct magic_entry *, b);</a>
+<a name="ln945">	size_t sa = apprentice_magic_strength(ma-&gt;mp);</a>
+<a name="ln946">	size_t sb = apprentice_magic_strength(mb-&gt;mp);</a>
+<a name="ln947">	if (sa == sb)</a>
+<a name="ln948">		return 0;</a>
+<a name="ln949">	else if (sa &gt; sb)</a>
+<a name="ln950">		return -1;</a>
+<a name="ln951">	else</a>
+<a name="ln952">		return 1;</a>
+<a name="ln953">}</a>
+<a name="ln954"> </a>
+<a name="ln955">/*  </a>
+<a name="ln956"> * Shows sorted patterns list in the order which is used for the matching</a>
+<a name="ln957"> */</a>
+<a name="ln958">private void</a>
+<a name="ln959">apprentice_list(struct mlist *mlist, int mode)</a>
+<a name="ln960">{</a>
+<a name="ln961">	uint32_t magindex = 0;</a>
+<a name="ln962">	struct mlist *ml;</a>
+<a name="ln963">	for (ml = mlist-&gt;next; ml != mlist; ml = ml-&gt;next) {</a>
+<a name="ln964">		for (magindex = 0; magindex &lt; ml-&gt;nmagic; magindex++) {</a>
+<a name="ln965">			struct magic *m = &amp;ml-&gt;magic[magindex];</a>
+<a name="ln966">			if ((m-&gt;flag &amp; mode) != mode) {</a>
+<a name="ln967">				/* Skip sub-tests */</a>
+<a name="ln968">				while (magindex + 1 &lt; ml-&gt;nmagic &amp;&amp;</a>
+<a name="ln969">				       ml-&gt;magic[magindex + 1].cont_level != 0)</a>
+<a name="ln970">					++magindex;</a>
+<a name="ln971">				continue; /* Skip to next top-level test*/</a>
+<a name="ln972">			}</a>
+<a name="ln973"> </a>
+<a name="ln974">			/*</a>
+<a name="ln975">			 * Try to iterate over the tree until we find item with</a>
+<a name="ln976">			 * description/mimetype.</a>
+<a name="ln977">			 */</a>
+<a name="ln978">			while (magindex + 1 &lt; ml-&gt;nmagic &amp;&amp;</a>
+<a name="ln979">			       ml-&gt;magic[magindex + 1].cont_level != 0 &amp;&amp;</a>
+<a name="ln980">			       *ml-&gt;magic[magindex].desc == '\0' &amp;&amp;</a>
+<a name="ln981">			       *ml-&gt;magic[magindex].mimetype == '\0')</a>
+<a name="ln982">				magindex++;</a>
+<a name="ln983"> </a>
+<a name="ln984">			printf(&quot;Strength = %3&quot; SIZE_T_FORMAT &quot;u@%u: %s [%s]\n&quot;,</a>
+<a name="ln985">			    apprentice_magic_strength(m),</a>
+<a name="ln986">			    ml-&gt;magic[magindex].lineno,</a>
+<a name="ln987">			    ml-&gt;magic[magindex].desc,</a>
+<a name="ln988">			    ml-&gt;magic[magindex].mimetype);</a>
+<a name="ln989">		}</a>
+<a name="ln990">	}</a>
+<a name="ln991">}</a>
+<a name="ln992"> </a>
+<a name="ln993">private void</a>
+<a name="ln994">set_test_type(struct magic *mstart, struct magic *m)</a>
+<a name="ln995">{</a>
+<a name="ln996">	switch (m-&gt;type) {</a>
+<a name="ln997">	case FILE_BYTE:</a>
+<a name="ln998">	case FILE_SHORT:</a>
+<a name="ln999">	case FILE_LONG:</a>
+<a name="ln1000">	case FILE_DATE:</a>
+<a name="ln1001">	case FILE_BESHORT:</a>
+<a name="ln1002">	case FILE_BELONG:</a>
+<a name="ln1003">	case FILE_BEDATE:</a>
+<a name="ln1004">	case FILE_LESHORT:</a>
+<a name="ln1005">	case FILE_LELONG:</a>
+<a name="ln1006">	case FILE_LEDATE:</a>
+<a name="ln1007">	case FILE_LDATE:</a>
+<a name="ln1008">	case FILE_BELDATE:</a>
+<a name="ln1009">	case FILE_LELDATE:</a>
+<a name="ln1010">	case FILE_MEDATE:</a>
+<a name="ln1011">	case FILE_MELDATE:</a>
+<a name="ln1012">	case FILE_MELONG:</a>
+<a name="ln1013">	case FILE_QUAD:</a>
+<a name="ln1014">	case FILE_LEQUAD:</a>
+<a name="ln1015">	case FILE_BEQUAD:</a>
+<a name="ln1016">	case FILE_QDATE:</a>
+<a name="ln1017">	case FILE_LEQDATE:</a>
+<a name="ln1018">	case FILE_BEQDATE:</a>
+<a name="ln1019">	case FILE_QLDATE:</a>
+<a name="ln1020">	case FILE_LEQLDATE:</a>
+<a name="ln1021">	case FILE_BEQLDATE:</a>
+<a name="ln1022">	case FILE_QWDATE:</a>
+<a name="ln1023">	case FILE_LEQWDATE:</a>
+<a name="ln1024">	case FILE_BEQWDATE:</a>
+<a name="ln1025">	case FILE_FLOAT:</a>
+<a name="ln1026">	case FILE_BEFLOAT:</a>
+<a name="ln1027">	case FILE_LEFLOAT:</a>
+<a name="ln1028">	case FILE_DOUBLE:</a>
+<a name="ln1029">	case FILE_BEDOUBLE:</a>
+<a name="ln1030">	case FILE_LEDOUBLE:</a>
+<a name="ln1031">	case FILE_DER:</a>
+<a name="ln1032">		mstart-&gt;flag |= BINTEST;</a>
+<a name="ln1033">		break;</a>
+<a name="ln1034">	case FILE_STRING:</a>
+<a name="ln1035">	case FILE_PSTRING:</a>
+<a name="ln1036">	case FILE_BESTRING16:</a>
+<a name="ln1037">	case FILE_LESTRING16:</a>
+<a name="ln1038">		/* Allow text overrides */</a>
+<a name="ln1039">		if (mstart-&gt;str_flags &amp; STRING_TEXTTEST)</a>
+<a name="ln1040">			mstart-&gt;flag |= TEXTTEST;</a>
+<a name="ln1041">		else</a>
+<a name="ln1042">			mstart-&gt;flag |= BINTEST;</a>
+<a name="ln1043">		break;</a>
+<a name="ln1044">	case FILE_REGEX:</a>
+<a name="ln1045">	case FILE_SEARCH:</a>
+<a name="ln1046">		/* Check for override */</a>
+<a name="ln1047">		if (mstart-&gt;str_flags &amp; STRING_BINTEST)</a>
+<a name="ln1048">			mstart-&gt;flag |= BINTEST;</a>
+<a name="ln1049">		if (mstart-&gt;str_flags &amp; STRING_TEXTTEST)</a>
+<a name="ln1050">			mstart-&gt;flag |= TEXTTEST;</a>
+<a name="ln1051">		    </a>
+<a name="ln1052">		if (mstart-&gt;flag &amp; (TEXTTEST|BINTEST))</a>
+<a name="ln1053">			break;</a>
+<a name="ln1054"> </a>
+<a name="ln1055">		/* binary test if pattern is not text */</a>
+<a name="ln1056">		if (file_looks_utf8(m-&gt;value.us, (size_t)m-&gt;vallen, NULL,</a>
+<a name="ln1057">		    NULL) &lt;= 0)</a>
+<a name="ln1058">			mstart-&gt;flag |= BINTEST;</a>
+<a name="ln1059">		else</a>
+<a name="ln1060">			mstart-&gt;flag |= TEXTTEST;</a>
+<a name="ln1061">		break;</a>
+<a name="ln1062">	case FILE_DEFAULT:</a>
+<a name="ln1063">		/* can't deduce anything; we shouldn't see this at the</a>
+<a name="ln1064">		   top level anyway */</a>
+<a name="ln1065">		break;</a>
+<a name="ln1066">	case FILE_INVALID:</a>
+<a name="ln1067">	default:</a>
+<a name="ln1068">		/* invalid search type, but no need to complain here */</a>
+<a name="ln1069">		break;</a>
+<a name="ln1070">	}</a>
+<a name="ln1071">}</a>
+<a name="ln1072"> </a>
+<a name="ln1073">private int</a>
+<a name="ln1074">addentry(struct magic_set *ms, struct magic_entry *me,</a>
+<a name="ln1075">   struct magic_entry_set *mset)</a>
+<a name="ln1076">{</a>
+<a name="ln1077">	size_t i = me-&gt;mp-&gt;type == FILE_NAME ? 1 : 0;</a>
+<a name="ln1078">	if (mset[i].count == mset[i].max) {</a>
+<a name="ln1079">		struct magic_entry *mp;</a>
+<a name="ln1080"> </a>
+<a name="ln1081">		mset[i].max += ALLOC_INCR;</a>
+<a name="ln1082">		if ((mp = CAST(struct magic_entry *,</a>
+<a name="ln1083">		    realloc(mset[i].me, sizeof(*mp) * mset[i].max))) ==</a>
+<a name="ln1084">		    NULL) {</a>
+<a name="ln1085">			file_oomem(ms, sizeof(*mp) * mset[i].max);</a>
+<a name="ln1086">			return -1;</a>
+<a name="ln1087">		}</a>
+<a name="ln1088">		(void)memset(&amp;mp[mset[i].count], 0, sizeof(*mp) *</a>
+<a name="ln1089">		    ALLOC_INCR);</a>
+<a name="ln1090">		mset[i].me = mp;</a>
+<a name="ln1091">	}</a>
+<a name="ln1092">	mset[i].me[mset[i].count++] = *me;</a>
+<a name="ln1093">	memset(me, 0, sizeof(*me));</a>
+<a name="ln1094">	return 0;</a>
+<a name="ln1095">}</a>
+<a name="ln1096"> </a>
+<a name="ln1097">/*</a>
+<a name="ln1098"> * Load and parse one file.</a>
+<a name="ln1099"> */</a>
+<a name="ln1100">private void</a>
+<a name="ln1101">load_1(struct magic_set *ms, int action, const char *fn, int *errs,</a>
+<a name="ln1102">   struct magic_entry_set *mset)</a>
+<a name="ln1103">{</a>
+<a name="ln1104">	size_t lineno = 0, llen = 0;</a>
+<a name="ln1105">	char *line = NULL;</a>
+<a name="ln1106">	ssize_t len;</a>
+<a name="ln1107">	struct magic_entry me;</a>
+<a name="ln1108"> </a>
+<a name="ln1109">	FILE *f = fopen(ms-&gt;file = fn, &quot;r&quot;);</a>
+<a name="ln1110">	if (f == NULL) {</a>
+<a name="ln1111">		if (errno != ENOENT)</a>
+<a name="ln1112">			file_error(ms, errno, &quot;cannot read magic file `%s'&quot;,</a>
+<a name="ln1113">				   fn);</a>
+<a name="ln1114">		(*errs)++;</a>
+<a name="ln1115">		return;</a>
+<a name="ln1116">	}</a>
+<a name="ln1117"> </a>
+<a name="ln1118">	memset(&amp;me, 0, sizeof(me));</a>
+<a name="ln1119">	/* read and parse this file */</a>
+<a name="ln1120">	for (ms-&gt;line = 1; (len = getline(&amp;line, &amp;llen, f)) != -1;</a>
+<a name="ln1121">	    ms-&gt;line++) {</a>
+<a name="ln1122">		if (len == 0) /* null line, garbage, etc */</a>
+<a name="ln1123">			continue;</a>
+<a name="ln1124">		if (line[len - 1] == '\n') {</a>
+<a name="ln1125">			lineno++;</a>
+<a name="ln1126">			line[len - 1] = '\0'; /* delete newline */</a>
+<a name="ln1127">		}</a>
+<a name="ln1128">		switch (line[0]) {</a>
+<a name="ln1129">		case '\0':	/* empty, do not parse */</a>
+<a name="ln1130">		case '#':	/* comment, do not parse */</a>
+<a name="ln1131">			continue;</a>
+<a name="ln1132">		case '!':</a>
+<a name="ln1133">			if (line[1] == ':') {</a>
+<a name="ln1134">				size_t i;</a>
+<a name="ln1135"> </a>
+<a name="ln1136">				for (i = 0; bang[i].name != NULL; i++) {</a>
+<a name="ln1137">					if ((size_t)(len - 2) &gt; bang[i].len &amp;&amp;</a>
+<a name="ln1138">					    memcmp(bang[i].name, line + 2,</a>
+<a name="ln1139">					    bang[i].len) == 0)</a>
+<a name="ln1140">						break;</a>
+<a name="ln1141">				}</a>
+<a name="ln1142">				if (bang[i].name == NULL) {</a>
+<a name="ln1143">					file_error(ms, 0,</a>
+<a name="ln1144">					    &quot;Unknown !: entry `%s'&quot;, line);</a>
+<a name="ln1145">					(*errs)++;</a>
+<a name="ln1146">					continue;</a>
+<a name="ln1147">				}</a>
+<a name="ln1148">				if (me.mp == NULL) {</a>
+<a name="ln1149">					file_error(ms, 0,</a>
+<a name="ln1150">					    &quot;No current entry for :!%s type&quot;,</a>
+<a name="ln1151">						bang[i].name);</a>
+<a name="ln1152">					(*errs)++;</a>
+<a name="ln1153">					continue;</a>
+<a name="ln1154">				}</a>
+<a name="ln1155">				if ((*bang[i].fun)(ms, &amp;me,</a>
+<a name="ln1156">				    line + bang[i].len + 2) != 0) {</a>
+<a name="ln1157">					(*errs)++;</a>
+<a name="ln1158">					continue;</a>
+<a name="ln1159">				}</a>
+<a name="ln1160">				continue;</a>
+<a name="ln1161">			}</a>
+<a name="ln1162">			/*FALLTHROUGH*/</a>
+<a name="ln1163">		default:</a>
+<a name="ln1164">		again:</a>
+<a name="ln1165">			switch (parse(ms, &amp;me, line, lineno, action)) {</a>
+<a name="ln1166">			case 0:</a>
+<a name="ln1167">				continue;</a>
+<a name="ln1168">			case 1:</a>
+<a name="ln1169">				(void)addentry(ms, &amp;me, mset);</a>
+<a name="ln1170">				goto again;</a>
+<a name="ln1171">			default:</a>
+<a name="ln1172">				(*errs)++;</a>
+<a name="ln1173">				break;</a>
+<a name="ln1174">			}</a>
+<a name="ln1175">		}</a>
+<a name="ln1176">	}</a>
+<a name="ln1177">	if (me.mp)</a>
+<a name="ln1178">		(void)addentry(ms, &amp;me, mset);</a>
+<a name="ln1179">	free(line);</a>
+<a name="ln1180">	(void)fclose(f);</a>
+<a name="ln1181">}</a>
+<a name="ln1182"> </a>
+<a name="ln1183">/*</a>
+<a name="ln1184"> * parse a file or directory of files</a>
+<a name="ln1185"> * const char *fn: name of magic file or directory</a>
+<a name="ln1186"> */</a>
+<a name="ln1187">private int</a>
+<a name="ln1188">cmpstrp(const void *p1, const void *p2)</a>
+<a name="ln1189">{</a>
+<a name="ln1190">        return strcmp(*(char *const *)p1, *(char *const *)p2);</a>
+<a name="ln1191">}</a>
+<a name="ln1192"> </a>
+<a name="ln1193"> </a>
+<a name="ln1194">private uint32_t</a>
+<a name="ln1195">set_text_binary(struct magic_set *ms, struct magic_entry *me, uint32_t nme,</a>
+<a name="ln1196">    uint32_t starttest)</a>
+<a name="ln1197">{</a>
+<a name="ln1198">	static const char text[] = &quot;text&quot;;</a>
+<a name="ln1199">	static const char binary[] = &quot;binary&quot;;</a>
+<a name="ln1200">	static const size_t len = sizeof(text);</a>
+<a name="ln1201"> </a>
+<a name="ln1202">	uint32_t i = starttest;</a>
+<a name="ln1203"> </a>
+<a name="ln1204">	do {</a>
+<a name="ln1205">		set_test_type(me[starttest].mp, me[i].mp);</a>
+<a name="ln1206">		if ((ms-&gt;flags &amp; MAGIC_DEBUG) == 0)</a>
+<a name="ln1207">			continue;</a>
+<a name="ln1208">		(void)fprintf(stderr, &quot;%s%s%s: %s\n&quot;,</a>
+<a name="ln1209">		    me[i].mp-&gt;mimetype,</a>
+<a name="ln1210">		    me[i].mp-&gt;mimetype[0] == '\0' ? &quot;&quot; : &quot;; &quot;,</a>
+<a name="ln1211">		    me[i].mp-&gt;desc[0] ? me[i].mp-&gt;desc : &quot;(no description)&quot;,</a>
+<a name="ln1212">		    me[i].mp-&gt;flag &amp; BINTEST ? binary : text);</a>
+<a name="ln1213">		if (me[i].mp-&gt;flag &amp; BINTEST) {</a>
+<a name="ln1214">			char *p = strstr(me[i].mp-&gt;desc, text);</a>
+<a name="ln1215">			if (p &amp;&amp; (p == me[i].mp-&gt;desc ||</a>
+<a name="ln1216">			    isspace((unsigned char)p[-1])) &amp;&amp;</a>
+<a name="ln1217">			    (p + len - me[i].mp-&gt;desc == MAXstring</a>
+<a name="ln1218">			    || (p[len] == '\0' ||</a>
+<a name="ln1219">			    isspace((unsigned char)p[len]))))</a>
+<a name="ln1220">				(void)fprintf(stderr, &quot;*** Possible &quot;</a>
+<a name="ln1221">				    &quot;binary test for text type\n&quot;);</a>
+<a name="ln1222">		}</a>
+<a name="ln1223">	} while (++i &lt; nme &amp;&amp; me[i].mp-&gt;cont_level != 0);</a>
+<a name="ln1224">	return i;</a>
+<a name="ln1225">}</a>
+<a name="ln1226"> </a>
+<a name="ln1227">private void</a>
+<a name="ln1228">set_last_default(struct magic_set *ms, struct magic_entry *me, uint32_t nme)</a>
+<a name="ln1229">{</a>
+<a name="ln1230">	uint32_t i;</a>
+<a name="ln1231">	for (i = 0; i &lt; nme; i++) {</a>
+<a name="ln1232">		if (me[i].mp-&gt;cont_level == 0 &amp;&amp;</a>
+<a name="ln1233">		    me[i].mp-&gt;type == FILE_DEFAULT) {</a>
+<a name="ln1234">			while (++i &lt; nme)</a>
+<a name="ln1235">				if (me[i].mp-&gt;cont_level == 0)</a>
+<a name="ln1236">					break;</a>
+<a name="ln1237">			if (i != nme) {</a>
+<a name="ln1238">				/* XXX - Ugh! */</a>
+<a name="ln1239">				ms-&gt;line = me[i].mp-&gt;lineno;</a>
+<a name="ln1240">				file_magwarn(ms,</a>
+<a name="ln1241">				    &quot;level 0 \&quot;default\&quot; did not sort last&quot;);</a>
+<a name="ln1242">			}</a>
+<a name="ln1243">			return;					    </a>
+<a name="ln1244">		}</a>
+<a name="ln1245">	}</a>
+<a name="ln1246">}</a>
+<a name="ln1247"> </a>
+<a name="ln1248">private int</a>
+<a name="ln1249">coalesce_entries(struct magic_set *ms, struct magic_entry *me, uint32_t nme,</a>
+<a name="ln1250">    struct magic **ma, uint32_t *nma)</a>
+<a name="ln1251">{</a>
+<a name="ln1252">	uint32_t i, mentrycount = 0;</a>
+<a name="ln1253">	size_t slen;</a>
+<a name="ln1254"> </a>
+<a name="ln1255">	for (i = 0; i &lt; nme; i++)</a>
+<a name="ln1256">		mentrycount += me[i].cont_count;</a>
+<a name="ln1257"> </a>
+<a name="ln1258">	slen = sizeof(**ma) * mentrycount;</a>
+<a name="ln1259">	if ((*ma = CAST(struct magic *, malloc(slen))) == NULL) {</a>
+<a name="ln1260">		file_oomem(ms, slen);</a>
+<a name="ln1261">		return -1;</a>
+<a name="ln1262">	}</a>
+<a name="ln1263"> </a>
+<a name="ln1264">	mentrycount = 0;</a>
+<a name="ln1265">	for (i = 0; i &lt; nme; i++) {</a>
+<a name="ln1266">		(void)memcpy(*ma + mentrycount, me[i].mp,</a>
+<a name="ln1267">		    me[i].cont_count * sizeof(**ma));</a>
+<a name="ln1268">		mentrycount += me[i].cont_count;</a>
+<a name="ln1269">	}</a>
+<a name="ln1270">	*nma = mentrycount;</a>
+<a name="ln1271">	return 0;</a>
+<a name="ln1272">}</a>
+<a name="ln1273"> </a>
+<a name="ln1274">private void</a>
+<a name="ln1275">magic_entry_free(struct magic_entry *me, uint32_t nme)</a>
+<a name="ln1276">{</a>
+<a name="ln1277">	uint32_t i;</a>
+<a name="ln1278">	if (me == NULL)</a>
+<a name="ln1279">		return;</a>
+<a name="ln1280">	for (i = 0; i &lt; nme; i++)</a>
+<a name="ln1281">		free(me[i].mp);</a>
+<a name="ln1282">	free(me);</a>
+<a name="ln1283">}</a>
+<a name="ln1284"> </a>
+<a name="ln1285">private struct magic_map *</a>
+<a name="ln1286">apprentice_load(struct magic_set *ms, const char *fn, int action)</a>
+<a name="ln1287">{</a>
+<a name="ln1288">	int errs = 0;</a>
+<a name="ln1289">	uint32_t i, j;</a>
+<a name="ln1290">	size_t files = 0, maxfiles = 0;</a>
+<a name="ln1291">	char **filearr = NULL, *mfn;</a>
+<a name="ln1292">	struct stat st;</a>
+<a name="ln1293">	struct magic_map *map;</a>
+<a name="ln1294">	struct magic_entry_set mset[MAGIC_SETS];</a>
+<a name="ln1295">	DIR *dir;</a>
+<a name="ln1296">	struct dirent *d;</a>
+<a name="ln1297"> </a>
+<a name="ln1298">	memset(mset, 0, sizeof(mset));</a>
+<a name="ln1299">	ms-&gt;flags |= MAGIC_CHECK;	/* Enable checks for parsed files */</a>
+<a name="ln1300"> </a>
+<a name="ln1301"> </a>
+<a name="ln1302">	if ((map = CAST(struct magic_map *, calloc(1, sizeof(*map)))) == NULL)</a>
+<a name="ln1303">	{</a>
+<a name="ln1304">		file_oomem(ms, sizeof(*map));</a>
+<a name="ln1305">		return NULL;</a>
+<a name="ln1306">	}</a>
+<a name="ln1307">	map-&gt;type = MAP_TYPE_MALLOC;</a>
+<a name="ln1308"> </a>
+<a name="ln1309">	/* print silly verbose header for USG compat. */</a>
+<a name="ln1310">	if (action == FILE_CHECK)</a>
+<a name="ln1311">		(void)fprintf(stderr, &quot;%s\n&quot;, usg_hdr);</a>
+<a name="ln1312"> </a>
+<a name="ln1313">	/* load directory or file */</a>
+<a name="ln1314">	if (stat(fn, &amp;st) == 0 &amp;&amp; S_ISDIR(st.st_mode)) {</a>
+<a name="ln1315">		dir = opendir(fn);</a>
+<a name="ln1316">		if (!dir) {</a>
+<a name="ln1317">			errs++;</a>
+<a name="ln1318">			goto out;</a>
+<a name="ln1319">		}</a>
+<a name="ln1320">		while ((d = readdir(dir)) != NULL) {</a>
+<a name="ln1321">			if (d-&gt;d_name[0] == '.')</a>
+<a name="ln1322">				continue;</a>
+<a name="ln1323">			if (asprintf(&amp;mfn, &quot;%s/%s&quot;, fn, d-&gt;d_name) &lt; 0) {</a>
+<a name="ln1324">				file_oomem(ms,</a>
+<a name="ln1325">				    strlen(fn) + strlen(d-&gt;d_name) + 2);</a>
+<a name="ln1326">				errs++;</a>
+<a name="ln1327">				closedir(dir);</a>
+<a name="ln1328">				goto out;</a>
+<a name="ln1329">			}</a>
+<a name="ln1330">			if (stat(mfn, &amp;st) == -1 || !S_ISREG(st.st_mode)) {</a>
+<a name="ln1331">				free(mfn);</a>
+<a name="ln1332">				continue;</a>
+<a name="ln1333">			}</a>
+<a name="ln1334">			if (files &gt;= maxfiles) {</a>
+<a name="ln1335">				size_t mlen;</a>
+<a name="ln1336">				maxfiles = (maxfiles + 1) * 2;</a>
+<a name="ln1337">				mlen = maxfiles * sizeof(*filearr);</a>
+<a name="ln1338">				if ((filearr = CAST(char **,</a>
+<a name="ln1339">				    realloc(filearr, mlen))) == NULL) {</a>
+<a name="ln1340">					file_oomem(ms, mlen);</a>
+<a name="ln1341">					free(mfn);</a>
+<a name="ln1342">					closedir(dir);</a>
+<a name="ln1343">					errs++;</a>
+<a name="ln1344">					goto out;</a>
+<a name="ln1345">				}</a>
+<a name="ln1346">			}</a>
+<a name="ln1347">			filearr[files++] = mfn;</a>
+<a name="ln1348">		}</a>
+<a name="ln1349">		closedir(dir);</a>
+<a name="ln1350">		qsort(filearr, files, sizeof(*filearr), cmpstrp);</a>
+<a name="ln1351">		for (i = 0; i &lt; files; i++) {</a>
+<a name="ln1352">			load_1(ms, action, filearr[i], &amp;errs, mset);</a>
+<a name="ln1353">			free(filearr[i]);</a>
+<a name="ln1354">		}</a>
+<a name="ln1355">		free(filearr);</a>
+<a name="ln1356">	} else</a>
+<a name="ln1357">		load_1(ms, action, fn, &amp;errs, mset);</a>
+<a name="ln1358">	if (errs)</a>
+<a name="ln1359">		goto out;</a>
+<a name="ln1360"> </a>
+<a name="ln1361">	for (j = 0; j &lt; MAGIC_SETS; j++) {</a>
+<a name="ln1362">		/* Set types of tests */</a>
+<a name="ln1363">		for (i = 0; i &lt; mset[j].count; ) {</a>
+<a name="ln1364">			if (mset[j].me[i].mp-&gt;cont_level != 0) {</a>
+<a name="ln1365">				i++;</a>
+<a name="ln1366">				continue;</a>
+<a name="ln1367">			}</a>
+<a name="ln1368">			i = set_text_binary(ms, mset[j].me, mset[j].count, i);</a>
+<a name="ln1369">		}</a>
+<a name="ln1370">		if (mset[j].me)</a>
+<a name="ln1371">			qsort(mset[j].me, mset[j].count, sizeof(*mset[j].me),</a>
+<a name="ln1372">			    apprentice_sort);</a>
+<a name="ln1373"> </a>
+<a name="ln1374">		/*</a>
+<a name="ln1375">		 * Make sure that any level 0 &quot;default&quot; line is last</a>
+<a name="ln1376">		 * (if one exists).</a>
+<a name="ln1377">		 */</a>
+<a name="ln1378">		set_last_default(ms, mset[j].me, mset[j].count);</a>
+<a name="ln1379"> </a>
+<a name="ln1380">		/* coalesce per file arrays into a single one */</a>
+<a name="ln1381">		if (coalesce_entries(ms, mset[j].me, mset[j].count,</a>
+<a name="ln1382">		    &amp;map-&gt;magic[j], &amp;map-&gt;nmagic[j]) == -1) {</a>
+<a name="ln1383">			errs++;</a>
+<a name="ln1384">			goto out;</a>
+<a name="ln1385">		}</a>
+<a name="ln1386">	}</a>
+<a name="ln1387"> </a>
+<a name="ln1388">out:</a>
+<a name="ln1389">	for (j = 0; j &lt; MAGIC_SETS; j++)</a>
+<a name="ln1390">		magic_entry_free(mset[j].me, mset[j].count);</a>
+<a name="ln1391"> </a>
+<a name="ln1392">	if (errs) {</a>
+<a name="ln1393">		apprentice_unmap(map);</a>
+<a name="ln1394">		return NULL;</a>
+<a name="ln1395">	}</a>
+<a name="ln1396">	return map;</a>
+<a name="ln1397">}</a>
+<a name="ln1398"> </a>
+<a name="ln1399">/*</a>
+<a name="ln1400"> * extend the sign bit if the comparison is to be signed</a>
+<a name="ln1401"> */</a>
+<a name="ln1402">protected uint64_t</a>
+<a name="ln1403">file_signextend(struct magic_set *ms, struct magic *m, uint64_t v)</a>
+<a name="ln1404">{</a>
+<a name="ln1405">	if (!(m-&gt;flag &amp; UNSIGNED)) {</a>
+<a name="ln1406">		switch(m-&gt;type) {</a>
+<a name="ln1407">		/*</a>
+<a name="ln1408">		 * Do not remove the casts below.  They are</a>
+<a name="ln1409">		 * vital.  When later compared with the data,</a>
+<a name="ln1410">		 * the sign extension must have happened.</a>
+<a name="ln1411">		 */</a>
+<a name="ln1412">		case FILE_BYTE:</a>
+<a name="ln1413">			v = (signed char) v;</a>
+<a name="ln1414">			break;</a>
+<a name="ln1415">		case FILE_SHORT:</a>
+<a name="ln1416">		case FILE_BESHORT:</a>
+<a name="ln1417">		case FILE_LESHORT:</a>
+<a name="ln1418">			v = (short) v;</a>
+<a name="ln1419">			break;</a>
+<a name="ln1420">		case FILE_DATE:</a>
+<a name="ln1421">		case FILE_BEDATE:</a>
+<a name="ln1422">		case FILE_LEDATE:</a>
+<a name="ln1423">		case FILE_MEDATE:</a>
+<a name="ln1424">		case FILE_LDATE:</a>
+<a name="ln1425">		case FILE_BELDATE:</a>
+<a name="ln1426">		case FILE_LELDATE:</a>
+<a name="ln1427">		case FILE_MELDATE:</a>
+<a name="ln1428">		case FILE_LONG:</a>
+<a name="ln1429">		case FILE_BELONG:</a>
+<a name="ln1430">		case FILE_LELONG:</a>
+<a name="ln1431">		case FILE_MELONG:</a>
+<a name="ln1432">		case FILE_FLOAT:</a>
+<a name="ln1433">		case FILE_BEFLOAT:</a>
+<a name="ln1434">		case FILE_LEFLOAT:</a>
+<a name="ln1435">			v = (int32_t) v;</a>
+<a name="ln1436">			break;</a>
+<a name="ln1437">		case FILE_QUAD:</a>
+<a name="ln1438">		case FILE_BEQUAD:</a>
+<a name="ln1439">		case FILE_LEQUAD:</a>
+<a name="ln1440">		case FILE_QDATE:</a>
+<a name="ln1441">		case FILE_QLDATE:</a>
+<a name="ln1442">		case FILE_QWDATE:</a>
+<a name="ln1443">		case FILE_BEQDATE:</a>
+<a name="ln1444">		case FILE_BEQLDATE:</a>
+<a name="ln1445">		case FILE_BEQWDATE:</a>
+<a name="ln1446">		case FILE_LEQDATE:</a>
+<a name="ln1447">		case FILE_LEQLDATE:</a>
+<a name="ln1448">		case FILE_LEQWDATE:</a>
+<a name="ln1449">		case FILE_DOUBLE:</a>
+<a name="ln1450">		case FILE_BEDOUBLE:</a>
+<a name="ln1451">		case FILE_LEDOUBLE:</a>
+<a name="ln1452">			v = (int64_t) v;</a>
+<a name="ln1453">			break;</a>
+<a name="ln1454">		case FILE_STRING:</a>
+<a name="ln1455">		case FILE_PSTRING:</a>
+<a name="ln1456">		case FILE_BESTRING16:</a>
+<a name="ln1457">		case FILE_LESTRING16:</a>
+<a name="ln1458">		case FILE_REGEX:</a>
+<a name="ln1459">		case FILE_SEARCH:</a>
+<a name="ln1460">		case FILE_DEFAULT:</a>
+<a name="ln1461">		case FILE_INDIRECT:</a>
+<a name="ln1462">		case FILE_NAME:</a>
+<a name="ln1463">		case FILE_USE:</a>
+<a name="ln1464">		case FILE_CLEAR:</a>
+<a name="ln1465">		case FILE_DER:</a>
+<a name="ln1466">			break;</a>
+<a name="ln1467">		default:</a>
+<a name="ln1468">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1469">			    file_magwarn(ms, &quot;cannot happen: m-&gt;type=%d\n&quot;,</a>
+<a name="ln1470">				    m-&gt;type);</a>
+<a name="ln1471">			return ~0U;</a>
+<a name="ln1472">		}</a>
+<a name="ln1473">	}</a>
+<a name="ln1474">	return v;</a>
+<a name="ln1475">}</a>
+<a name="ln1476"> </a>
+<a name="ln1477">private int</a>
+<a name="ln1478">string_modifier_check(struct magic_set *ms, struct magic *m)</a>
+<a name="ln1479">{</a>
+<a name="ln1480">	if ((ms-&gt;flags &amp; MAGIC_CHECK) == 0)</a>
+<a name="ln1481">		return 0;</a>
+<a name="ln1482"> </a>
+<a name="ln1483">	if ((m-&gt;type != FILE_REGEX || (m-&gt;str_flags &amp; REGEX_LINE_COUNT) == 0) &amp;&amp;</a>
+<a name="ln1484">	    (m-&gt;type != FILE_PSTRING &amp;&amp; (m-&gt;str_flags &amp; PSTRING_LEN) != 0)) {</a>
+<a name="ln1485">		file_magwarn(ms,</a>
+<a name="ln1486">		    &quot;'/BHhLl' modifiers are only allowed for pascal strings\n&quot;);</a>
+<a name="ln1487">		return -1;</a>
+<a name="ln1488">	}</a>
+<a name="ln1489">	switch (m-&gt;type) {</a>
+<a name="ln1490">	case FILE_BESTRING16:</a>
+<a name="ln1491">	case FILE_LESTRING16:</a>
+<a name="ln1492">		if (m-&gt;str_flags != 0) {</a>
+<a name="ln1493">			file_magwarn(ms,</a>
+<a name="ln1494">			    &quot;no modifiers allowed for 16-bit strings\n&quot;);</a>
+<a name="ln1495">			return -1;</a>
+<a name="ln1496">		}</a>
+<a name="ln1497">		break;</a>
+<a name="ln1498">	case FILE_STRING:</a>
+<a name="ln1499">	case FILE_PSTRING:</a>
+<a name="ln1500">		if ((m-&gt;str_flags &amp; REGEX_OFFSET_START) != 0) {</a>
+<a name="ln1501">			file_magwarn(ms,</a>
+<a name="ln1502">			    &quot;'/%c' only allowed on regex and search\n&quot;,</a>
+<a name="ln1503">			    CHAR_REGEX_OFFSET_START);</a>
+<a name="ln1504">			return -1;</a>
+<a name="ln1505">		}</a>
+<a name="ln1506">		break;</a>
+<a name="ln1507">	case FILE_SEARCH:</a>
+<a name="ln1508">		if (m-&gt;str_range == 0) {</a>
+<a name="ln1509">			file_magwarn(ms,</a>
+<a name="ln1510">			    &quot;missing range; defaulting to %d\n&quot;,</a>
+<a name="ln1511">                            STRING_DEFAULT_RANGE);</a>
+<a name="ln1512">			m-&gt;str_range = STRING_DEFAULT_RANGE;</a>
+<a name="ln1513">			return -1;</a>
+<a name="ln1514">		}</a>
+<a name="ln1515">		break;</a>
+<a name="ln1516">	case FILE_REGEX:</a>
+<a name="ln1517">		if ((m-&gt;str_flags &amp; STRING_COMPACT_WHITESPACE) != 0) {</a>
+<a name="ln1518">			file_magwarn(ms, &quot;'/%c' not allowed on regex\n&quot;,</a>
+<a name="ln1519">			    CHAR_COMPACT_WHITESPACE);</a>
+<a name="ln1520">			return -1;</a>
+<a name="ln1521">		}</a>
+<a name="ln1522">		if ((m-&gt;str_flags &amp; STRING_COMPACT_OPTIONAL_WHITESPACE) != 0) {</a>
+<a name="ln1523">			file_magwarn(ms, &quot;'/%c' not allowed on regex\n&quot;,</a>
+<a name="ln1524">			    CHAR_COMPACT_OPTIONAL_WHITESPACE);</a>
+<a name="ln1525">			return -1;</a>
+<a name="ln1526">		}</a>
+<a name="ln1527">		break;</a>
+<a name="ln1528">	default:</a>
+<a name="ln1529">		file_magwarn(ms, &quot;coding error: m-&gt;type=%d\n&quot;,</a>
+<a name="ln1530">		    m-&gt;type);</a>
+<a name="ln1531">		return -1;</a>
+<a name="ln1532">	}</a>
+<a name="ln1533">	return 0;</a>
+<a name="ln1534">}</a>
+<a name="ln1535"> </a>
+<a name="ln1536">private int</a>
+<a name="ln1537">get_op(char c)</a>
+<a name="ln1538">{</a>
+<a name="ln1539">	switch (c) {</a>
+<a name="ln1540">	case '&amp;':</a>
+<a name="ln1541">		return FILE_OPAND;</a>
+<a name="ln1542">	case '|':</a>
+<a name="ln1543">		return FILE_OPOR;</a>
+<a name="ln1544">	case '^':</a>
+<a name="ln1545">		return FILE_OPXOR;</a>
+<a name="ln1546">	case '+':</a>
+<a name="ln1547">		return FILE_OPADD;</a>
+<a name="ln1548">	case '-':</a>
+<a name="ln1549">		return FILE_OPMINUS;</a>
+<a name="ln1550">	case '*':</a>
+<a name="ln1551">		return FILE_OPMULTIPLY;</a>
+<a name="ln1552">	case '/':</a>
+<a name="ln1553">		return FILE_OPDIVIDE;</a>
+<a name="ln1554">	case '%':</a>
+<a name="ln1555">		return FILE_OPMODULO;</a>
+<a name="ln1556">	default:</a>
+<a name="ln1557">		return -1;</a>
+<a name="ln1558">	}</a>
+<a name="ln1559">}</a>
+<a name="ln1560"> </a>
+<a name="ln1561">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln1562">private int</a>
+<a name="ln1563">get_cond(const char *l, const char **t)</a>
+<a name="ln1564">{</a>
+<a name="ln1565">	static const struct cond_tbl_s {</a>
+<a name="ln1566">		char name[8];</a>
+<a name="ln1567">		size_t len;</a>
+<a name="ln1568">		int cond;</a>
+<a name="ln1569">	} cond_tbl[] = {</a>
+<a name="ln1570">		{ &quot;if&quot;,		2,	COND_IF },</a>
+<a name="ln1571">		{ &quot;elif&quot;,	4,	COND_ELIF },</a>
+<a name="ln1572">		{ &quot;else&quot;,	4,	COND_ELSE },</a>
+<a name="ln1573">		{ &quot;&quot;,		0,	COND_NONE },</a>
+<a name="ln1574">	};</a>
+<a name="ln1575">	const struct cond_tbl_s *p;</a>
+<a name="ln1576"> </a>
+<a name="ln1577">	for (p = cond_tbl; p-&gt;len; p++) {</a>
+<a name="ln1578">		if (strncmp(l, p-&gt;name, p-&gt;len) == 0 &amp;&amp;</a>
+<a name="ln1579">		    isspace((unsigned char)l[p-&gt;len])) {</a>
+<a name="ln1580">			if (t)</a>
+<a name="ln1581">				*t = l + p-&gt;len;</a>
+<a name="ln1582">			break;</a>
+<a name="ln1583">		}</a>
+<a name="ln1584">	}</a>
+<a name="ln1585">	return p-&gt;cond;</a>
+<a name="ln1586">}</a>
+<a name="ln1587"> </a>
+<a name="ln1588">private int</a>
+<a name="ln1589">check_cond(struct magic_set *ms, int cond, uint32_t cont_level)</a>
+<a name="ln1590">{</a>
+<a name="ln1591">	int last_cond;</a>
+<a name="ln1592">	last_cond = ms-&gt;c.li[cont_level].last_cond;</a>
+<a name="ln1593"> </a>
+<a name="ln1594">	switch (cond) {</a>
+<a name="ln1595">	case COND_IF:</a>
+<a name="ln1596">		if (last_cond != COND_NONE &amp;&amp; last_cond != COND_ELIF) {</a>
+<a name="ln1597">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1598">				file_magwarn(ms, &quot;syntax error: `if'&quot;);</a>
+<a name="ln1599">			return -1;</a>
+<a name="ln1600">		}</a>
+<a name="ln1601">		last_cond = COND_IF;</a>
+<a name="ln1602">		break;</a>
+<a name="ln1603"> </a>
+<a name="ln1604">	case COND_ELIF:</a>
+<a name="ln1605">		if (last_cond != COND_IF &amp;&amp; last_cond != COND_ELIF) {</a>
+<a name="ln1606">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1607">				file_magwarn(ms, &quot;syntax error: `elif'&quot;);</a>
+<a name="ln1608">			return -1;</a>
+<a name="ln1609">		}</a>
+<a name="ln1610">		last_cond = COND_ELIF;</a>
+<a name="ln1611">		break;</a>
+<a name="ln1612"> </a>
+<a name="ln1613">	case COND_ELSE:</a>
+<a name="ln1614">		if (last_cond != COND_IF &amp;&amp; last_cond != COND_ELIF) {</a>
+<a name="ln1615">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1616">				file_magwarn(ms, &quot;syntax error: `else'&quot;);</a>
+<a name="ln1617">			return -1;</a>
+<a name="ln1618">		}</a>
+<a name="ln1619">		last_cond = COND_NONE;</a>
+<a name="ln1620">		break;</a>
+<a name="ln1621"> </a>
+<a name="ln1622">	case COND_NONE:</a>
+<a name="ln1623">		last_cond = COND_NONE;</a>
+<a name="ln1624">		break;</a>
+<a name="ln1625">	}</a>
+<a name="ln1626"> </a>
+<a name="ln1627">	ms-&gt;c.li[cont_level].last_cond = last_cond;</a>
+<a name="ln1628">	return 0;</a>
+<a name="ln1629">}</a>
+<a name="ln1630">#endif /* ENABLE_CONDITIONALS */</a>
+<a name="ln1631"> </a>
+<a name="ln1632">private int</a>
+<a name="ln1633">parse_indirect_modifier(struct magic_set *ms, struct magic *m, const char **lp)</a>
+<a name="ln1634">{</a>
+<a name="ln1635">	const char *l = *lp;</a>
+<a name="ln1636"> </a>
+<a name="ln1637">	while (!isspace((unsigned char)*++l))</a>
+<a name="ln1638">		switch (*l) {</a>
+<a name="ln1639">		case CHAR_INDIRECT_RELATIVE:</a>
+<a name="ln1640">			m-&gt;str_flags |= INDIRECT_RELATIVE;</a>
+<a name="ln1641">			break;</a>
+<a name="ln1642">		default:</a>
+<a name="ln1643">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1644">				file_magwarn(ms, &quot;indirect modifier `%c' &quot;</a>
+<a name="ln1645">					&quot;invalid&quot;, *l);</a>
+<a name="ln1646">			*lp = l;</a>
+<a name="ln1647">			return -1;</a>
+<a name="ln1648">		}</a>
+<a name="ln1649">	*lp = l;</a>
+<a name="ln1650">	return 0;</a>
+<a name="ln1651">}</a>
+<a name="ln1652"> </a>
+<a name="ln1653">private void</a>
+<a name="ln1654">parse_op_modifier(struct magic_set *ms, struct magic *m, const char **lp,</a>
+<a name="ln1655">    int op)</a>
+<a name="ln1656">{</a>
+<a name="ln1657">	const char *l = *lp;</a>
+<a name="ln1658">	char *t;</a>
+<a name="ln1659">	uint64_t val;</a>
+<a name="ln1660"> </a>
+<a name="ln1661">	++l;</a>
+<a name="ln1662">	m-&gt;mask_op |= op;</a>
+<a name="ln1663">	val = (uint64_t)strtoull(l, &amp;t, 0);</a>
+<a name="ln1664">	l = t;</a>
+<a name="ln1665">	m-&gt;num_mask = file_signextend(ms, m, val);</a>
+<a name="ln1666">	eatsize(&amp;l);</a>
+<a name="ln1667">	*lp = l;</a>
+<a name="ln1668">}</a>
+<a name="ln1669"> </a>
+<a name="ln1670">private int</a>
+<a name="ln1671">parse_string_modifier(struct magic_set *ms, struct magic *m, const char **lp)</a>
+<a name="ln1672">{</a>
+<a name="ln1673">	const char *l = *lp;</a>
+<a name="ln1674">	char *t;</a>
+<a name="ln1675">	int have_range = 0;</a>
+<a name="ln1676"> </a>
+<a name="ln1677">	while (!isspace((unsigned char)*++l)) {</a>
+<a name="ln1678">		switch (*l) {</a>
+<a name="ln1679">		case '0':  case '1':  case '2':</a>
+<a name="ln1680">		case '3':  case '4':  case '5':</a>
+<a name="ln1681">		case '6':  case '7':  case '8':</a>
+<a name="ln1682">		case '9':</a>
+<a name="ln1683">			if (have_range &amp;&amp; (ms-&gt;flags &amp; MAGIC_CHECK))</a>
+<a name="ln1684">				file_magwarn(ms, &quot;multiple ranges&quot;);</a>
+<a name="ln1685">			have_range = 1;</a>
+<a name="ln1686">			m-&gt;str_range = CAST(uint32_t, strtoul(l, &amp;t, 0));</a>
+<a name="ln1687">			if (m-&gt;str_range == 0)</a>
+<a name="ln1688">				file_magwarn(ms, &quot;zero range&quot;);</a>
+<a name="ln1689">			l = t - 1;</a>
+<a name="ln1690">			break;</a>
+<a name="ln1691">		case CHAR_COMPACT_WHITESPACE:</a>
+<a name="ln1692">			m-&gt;str_flags |= STRING_COMPACT_WHITESPACE;</a>
+<a name="ln1693">			break;</a>
+<a name="ln1694">		case CHAR_COMPACT_OPTIONAL_WHITESPACE:</a>
+<a name="ln1695">			m-&gt;str_flags |= STRING_COMPACT_OPTIONAL_WHITESPACE;</a>
+<a name="ln1696">			break;</a>
+<a name="ln1697">		case CHAR_IGNORE_LOWERCASE:</a>
+<a name="ln1698">			m-&gt;str_flags |= STRING_IGNORE_LOWERCASE;</a>
+<a name="ln1699">			break;</a>
+<a name="ln1700">		case CHAR_IGNORE_UPPERCASE:</a>
+<a name="ln1701">			m-&gt;str_flags |= STRING_IGNORE_UPPERCASE;</a>
+<a name="ln1702">			break;</a>
+<a name="ln1703">		case CHAR_REGEX_OFFSET_START:</a>
+<a name="ln1704">			m-&gt;str_flags |= REGEX_OFFSET_START;</a>
+<a name="ln1705">			break;</a>
+<a name="ln1706">		case CHAR_BINTEST:</a>
+<a name="ln1707">			m-&gt;str_flags |= STRING_BINTEST;</a>
+<a name="ln1708">			break;</a>
+<a name="ln1709">		case CHAR_TEXTTEST:</a>
+<a name="ln1710">			m-&gt;str_flags |= STRING_TEXTTEST;</a>
+<a name="ln1711">			break;</a>
+<a name="ln1712">		case CHAR_TRIM:</a>
+<a name="ln1713">			m-&gt;str_flags |= STRING_TRIM;</a>
+<a name="ln1714">			break;</a>
+<a name="ln1715">		case CHAR_PSTRING_1_LE:</a>
+<a name="ln1716">#define SET_LENGTH(a) m-&gt;str_flags = (m-&gt;str_flags &amp; ~PSTRING_LEN) | (a)</a>
+<a name="ln1717">			if (m-&gt;type != FILE_PSTRING)</a>
+<a name="ln1718">				goto bad;</a>
+<a name="ln1719">			SET_LENGTH(PSTRING_1_LE);</a>
+<a name="ln1720">			break;</a>
+<a name="ln1721">		case CHAR_PSTRING_2_BE:</a>
+<a name="ln1722">			if (m-&gt;type != FILE_PSTRING)</a>
+<a name="ln1723">				goto bad;</a>
+<a name="ln1724">			SET_LENGTH(PSTRING_2_BE);</a>
+<a name="ln1725">			break;</a>
+<a name="ln1726">		case CHAR_PSTRING_2_LE:</a>
+<a name="ln1727">			if (m-&gt;type != FILE_PSTRING)</a>
+<a name="ln1728">				goto bad;</a>
+<a name="ln1729">			SET_LENGTH(PSTRING_2_LE);</a>
+<a name="ln1730">			break;</a>
+<a name="ln1731">		case CHAR_PSTRING_4_BE:</a>
+<a name="ln1732">			if (m-&gt;type != FILE_PSTRING)</a>
+<a name="ln1733">				goto bad;</a>
+<a name="ln1734">			SET_LENGTH(PSTRING_4_BE);</a>
+<a name="ln1735">			break;</a>
+<a name="ln1736">		case CHAR_PSTRING_4_LE:</a>
+<a name="ln1737">			switch (m-&gt;type) {</a>
+<a name="ln1738">			case FILE_PSTRING:</a>
+<a name="ln1739">			case FILE_REGEX:</a>
+<a name="ln1740">				break;</a>
+<a name="ln1741">			default:</a>
+<a name="ln1742">				goto bad;</a>
+<a name="ln1743">			}</a>
+<a name="ln1744">			SET_LENGTH(PSTRING_4_LE);</a>
+<a name="ln1745">			break;</a>
+<a name="ln1746">		case CHAR_PSTRING_LENGTH_INCLUDES_ITSELF:</a>
+<a name="ln1747">			if (m-&gt;type != FILE_PSTRING)</a>
+<a name="ln1748">				goto bad;</a>
+<a name="ln1749">			m-&gt;str_flags |= PSTRING_LENGTH_INCLUDES_ITSELF;</a>
+<a name="ln1750">			break;</a>
+<a name="ln1751">		default:</a>
+<a name="ln1752">		bad:</a>
+<a name="ln1753">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1754">				file_magwarn(ms, &quot;string modifier `%c' &quot;</a>
+<a name="ln1755">					&quot;invalid&quot;, *l);</a>
+<a name="ln1756">			goto out;</a>
+<a name="ln1757">		}</a>
+<a name="ln1758">		/* allow multiple '/' for readability */</a>
+<a name="ln1759">		if (l[1] == '/' &amp;&amp; !isspace((unsigned char)l[2]))</a>
+<a name="ln1760">			l++;</a>
+<a name="ln1761">	}</a>
+<a name="ln1762">	if (string_modifier_check(ms, m) == -1)</a>
+<a name="ln1763">		goto out;</a>
+<a name="ln1764">	*lp = l;</a>
+<a name="ln1765">	return 0;</a>
+<a name="ln1766">out:</a>
+<a name="ln1767">	*lp = l;</a>
+<a name="ln1768">	return -1;</a>
+<a name="ln1769">}</a>
+<a name="ln1770"> </a>
+<a name="ln1771">/*</a>
+<a name="ln1772"> * parse one line from magic file, put into magic[index++] if valid</a>
+<a name="ln1773"> */</a>
+<a name="ln1774">private int</a>
+<a name="ln1775">parse(struct magic_set *ms, struct magic_entry *me, const char *line,</a>
+<a name="ln1776">    size_t lineno, int action)</a>
+<a name="ln1777">{</a>
+<a name="ln1778">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln1779">	static uint32_t last_cont_level = 0;</a>
+<a name="ln1780">#endif</a>
+<a name="ln1781">	size_t i;</a>
+<a name="ln1782">	struct magic *m;</a>
+<a name="ln1783">	const char *l = line;</a>
+<a name="ln1784">	char *t;</a>
+<a name="ln1785">	int op;</a>
+<a name="ln1786">	uint32_t cont_level;</a>
+<a name="ln1787">	int32_t diff;</a>
+<a name="ln1788"> </a>
+<a name="ln1789">	cont_level = 0;</a>
+<a name="ln1790"> </a>
+<a name="ln1791">	/*</a>
+<a name="ln1792">	 * Parse the offset.</a>
+<a name="ln1793">	 */</a>
+<a name="ln1794">	while (*l == '&gt;') {</a>
+<a name="ln1795">		++l;		/* step over */</a>
+<a name="ln1796">		cont_level++; </a>
+<a name="ln1797">	}</a>
+<a name="ln1798">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln1799">	if (cont_level == 0 || cont_level &gt; last_cont_level)</a>
+<a name="ln1800">		if (file_check_mem(ms, cont_level) == -1)</a>
+<a name="ln1801">			return -1;</a>
+<a name="ln1802">	last_cont_level = cont_level;</a>
+<a name="ln1803">#endif</a>
+<a name="ln1804">	if (cont_level != 0) {</a>
+<a name="ln1805">		if (me-&gt;mp == NULL) {</a>
+<a name="ln1806">			file_magerror(ms, &quot;No current entry for continuation&quot;);</a>
+<a name="ln1807">			return -1;</a>
+<a name="ln1808">		}</a>
+<a name="ln1809">		if (me-&gt;cont_count == 0) {</a>
+<a name="ln1810">			file_magerror(ms, &quot;Continuations present with 0 count&quot;);</a>
+<a name="ln1811">			return -1;</a>
+<a name="ln1812">		}</a>
+<a name="ln1813">		m = &amp;me-&gt;mp[me-&gt;cont_count - 1];</a>
+<a name="ln1814">		diff = (int32_t)cont_level - (int32_t)m-&gt;cont_level;</a>
+<a name="ln1815">		if (diff &gt; 1)</a>
+<a name="ln1816">			file_magwarn(ms, &quot;New continuation level %u is more &quot;</a>
+<a name="ln1817">			    &quot;than one larger than current level %u&quot;, cont_level,</a>
+<a name="ln1818">			    m-&gt;cont_level);</a>
+<a name="ln1819">		if (me-&gt;cont_count == me-&gt;max_count) {</a>
+<a name="ln1820">			struct magic *nm;</a>
+<a name="ln1821">			size_t cnt = me-&gt;max_count + ALLOC_CHUNK;</a>
+<a name="ln1822">			if ((nm = CAST(struct magic *, realloc(me-&gt;mp,</a>
+<a name="ln1823">			    sizeof(*nm) * cnt))) == NULL) {</a>
+<a name="ln1824">				file_oomem(ms, sizeof(*nm) * cnt);</a>
+<a name="ln1825">				return -1;</a>
+<a name="ln1826">			}</a>
+<a name="ln1827">			me-&gt;mp = m = nm;</a>
+<a name="ln1828">			me-&gt;max_count = CAST(uint32_t, cnt);</a>
+<a name="ln1829">		}</a>
+<a name="ln1830">		m = &amp;me-&gt;mp[me-&gt;cont_count++];</a>
+<a name="ln1831">		(void)memset(m, 0, sizeof(*m));</a>
+<a name="ln1832">		m-&gt;cont_level = cont_level;</a>
+<a name="ln1833">	} else {</a>
+<a name="ln1834">		static const size_t len = sizeof(*m) * ALLOC_CHUNK;</a>
+<a name="ln1835">		if (me-&gt;mp != NULL)</a>
+<a name="ln1836">			return 1;</a>
+<a name="ln1837">		if ((m = CAST(struct magic *, malloc(len))) == NULL) {</a>
+<a name="ln1838">			file_oomem(ms, len);</a>
+<a name="ln1839">			return -1;</a>
+<a name="ln1840">		}</a>
+<a name="ln1841">		me-&gt;mp = m;</a>
+<a name="ln1842">		me-&gt;max_count = ALLOC_CHUNK;</a>
+<a name="ln1843">		(void)memset(m, 0, sizeof(*m));</a>
+<a name="ln1844">		m-&gt;factor_op = FILE_FACTOR_OP_NONE;</a>
+<a name="ln1845">		m-&gt;cont_level = 0;</a>
+<a name="ln1846">		me-&gt;cont_count = 1;</a>
+<a name="ln1847">	}</a>
+<a name="ln1848">	m-&gt;lineno = CAST(uint32_t, lineno);</a>
+<a name="ln1849"> </a>
+<a name="ln1850">	if (*l == '&amp;') {  /* m-&gt;cont_level == 0 checked below. */</a>
+<a name="ln1851">                ++l;            /* step over */</a>
+<a name="ln1852">                m-&gt;flag |= OFFADD;</a>
+<a name="ln1853">        }</a>
+<a name="ln1854">	if (*l == '(') {</a>
+<a name="ln1855">		++l;		/* step over */</a>
+<a name="ln1856">		m-&gt;flag |= INDIR;</a>
+<a name="ln1857">		if (m-&gt;flag &amp; OFFADD)</a>
+<a name="ln1858">			m-&gt;flag = (m-&gt;flag &amp; ~OFFADD) | INDIROFFADD;</a>
+<a name="ln1859"> </a>
+<a name="ln1860">		if (*l == '&amp;') {  /* m-&gt;cont_level == 0 checked below */</a>
+<a name="ln1861">			++l;            /* step over */</a>
+<a name="ln1862">			m-&gt;flag |= OFFADD;</a>
+<a name="ln1863">		}</a>
+<a name="ln1864">	}</a>
+<a name="ln1865">	/* Indirect offsets are not valid at level 0. */</a>
+<a name="ln1866">	if (m-&gt;cont_level == 0 &amp;&amp; (m-&gt;flag &amp; (OFFADD | INDIROFFADD))) {</a>
+<a name="ln1867">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1868">			file_magwarn(ms, &quot;relative offset at level 0&quot;);</a>
+<a name="ln1869">		return -1;</a>
+<a name="ln1870">	}</a>
+<a name="ln1871"> </a>
+<a name="ln1872">	/* get offset, then skip over it */</a>
+<a name="ln1873">	m-&gt;offset = (uint32_t)strtoul(l, &amp;t, 0);</a>
+<a name="ln1874">        if (l == t) {</a>
+<a name="ln1875">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1876">			file_magwarn(ms, &quot;offset `%s' invalid&quot;, l);</a>
+<a name="ln1877">		return -1;</a>
+<a name="ln1878">	}</a>
+<a name="ln1879">        l = t;</a>
+<a name="ln1880"> </a>
+<a name="ln1881">	if (m-&gt;flag &amp; INDIR) {</a>
+<a name="ln1882">		m-&gt;in_type = FILE_LONG;</a>
+<a name="ln1883">		m-&gt;in_offset = 0;</a>
+<a name="ln1884">		m-&gt;in_op = 0;</a>
+<a name="ln1885">		/*</a>
+<a name="ln1886">		 * read [.,lbs][+-]nnnnn)</a>
+<a name="ln1887">		 */</a>
+<a name="ln1888">		if (*l == '.' || *l == ',') {</a>
+<a name="ln1889">			if (*l == ',')</a>
+<a name="ln1890">				m-&gt;in_op |= FILE_OPSIGNED;</a>
+<a name="ln1891">			l++;</a>
+<a name="ln1892">			switch (*l) {</a>
+<a name="ln1893">			case 'l':</a>
+<a name="ln1894">				m-&gt;in_type = FILE_LELONG;</a>
+<a name="ln1895">				break;</a>
+<a name="ln1896">			case 'L':</a>
+<a name="ln1897">				m-&gt;in_type = FILE_BELONG;</a>
+<a name="ln1898">				break;</a>
+<a name="ln1899">			case 'm':</a>
+<a name="ln1900">				m-&gt;in_type = FILE_MELONG;</a>
+<a name="ln1901">				break;</a>
+<a name="ln1902">			case 'h':</a>
+<a name="ln1903">			case 's':</a>
+<a name="ln1904">				m-&gt;in_type = FILE_LESHORT;</a>
+<a name="ln1905">				break;</a>
+<a name="ln1906">			case 'H':</a>
+<a name="ln1907">			case 'S':</a>
+<a name="ln1908">				m-&gt;in_type = FILE_BESHORT;</a>
+<a name="ln1909">				break;</a>
+<a name="ln1910">			case 'c':</a>
+<a name="ln1911">			case 'b':</a>
+<a name="ln1912">			case 'C':</a>
+<a name="ln1913">			case 'B':</a>
+<a name="ln1914">				m-&gt;in_type = FILE_BYTE;</a>
+<a name="ln1915">				break;</a>
+<a name="ln1916">			case 'e':</a>
+<a name="ln1917">			case 'f':</a>
+<a name="ln1918">			case 'g':</a>
+<a name="ln1919">				m-&gt;in_type = FILE_LEDOUBLE;</a>
+<a name="ln1920">				break;</a>
+<a name="ln1921">			case 'E':</a>
+<a name="ln1922">			case 'F':</a>
+<a name="ln1923">			case 'G':</a>
+<a name="ln1924">				m-&gt;in_type = FILE_BEDOUBLE;</a>
+<a name="ln1925">				break;</a>
+<a name="ln1926">			case 'i':</a>
+<a name="ln1927">				m-&gt;in_type = FILE_LEID3;</a>
+<a name="ln1928">				break;</a>
+<a name="ln1929">			case 'I':</a>
+<a name="ln1930">				m-&gt;in_type = FILE_BEID3;</a>
+<a name="ln1931">				break;</a>
+<a name="ln1932">			default:</a>
+<a name="ln1933">				if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1934">					file_magwarn(ms,</a>
+<a name="ln1935">					    &quot;indirect offset type `%c' invalid&quot;,</a>
+<a name="ln1936">					    *l);</a>
+<a name="ln1937">				return -1;</a>
+<a name="ln1938">			}</a>
+<a name="ln1939">			l++;</a>
+<a name="ln1940">		}</a>
+<a name="ln1941"> </a>
+<a name="ln1942">		if (*l == '~') {</a>
+<a name="ln1943">			m-&gt;in_op |= FILE_OPINVERSE;</a>
+<a name="ln1944">			l++;</a>
+<a name="ln1945">		}</a>
+<a name="ln1946">		if ((op = get_op(*l)) != -1) {</a>
+<a name="ln1947">			m-&gt;in_op |= op;</a>
+<a name="ln1948">			l++;</a>
+<a name="ln1949">		}</a>
+<a name="ln1950">		if (*l == '(') {</a>
+<a name="ln1951">			m-&gt;in_op |= FILE_OPINDIRECT;</a>
+<a name="ln1952">			l++;</a>
+<a name="ln1953">		}</a>
+<a name="ln1954">		if (isdigit((unsigned char)*l) || *l == '-') {</a>
+<a name="ln1955">			m-&gt;in_offset = (int32_t)strtol(l, &amp;t, 0);</a>
+<a name="ln1956">			if (l == t) {</a>
+<a name="ln1957">				if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1958">					file_magwarn(ms,</a>
+<a name="ln1959">					    &quot;in_offset `%s' invalid&quot;, l);</a>
+<a name="ln1960">				return -1;</a>
+<a name="ln1961">			}</a>
+<a name="ln1962">			l = t;</a>
+<a name="ln1963">		}</a>
+<a name="ln1964">		if (*l++ != ')' || </a>
+<a name="ln1965">		    ((m-&gt;in_op &amp; FILE_OPINDIRECT) &amp;&amp; *l++ != ')')) {</a>
+<a name="ln1966">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln1967">				file_magwarn(ms,</a>
+<a name="ln1968">				    &quot;missing ')' in indirect offset&quot;);</a>
+<a name="ln1969">			return -1;</a>
+<a name="ln1970">		}</a>
+<a name="ln1971">	}</a>
+<a name="ln1972">	EATAB;</a>
+<a name="ln1973"> </a>
+<a name="ln1974">#ifdef ENABLE_CONDITIONALS</a>
+<a name="ln1975">	m-&gt;cond = get_cond(l, &amp;l);</a>
+<a name="ln1976">	if (check_cond(ms, m-&gt;cond, cont_level) == -1)</a>
+<a name="ln1977">		return -1;</a>
+<a name="ln1978"> </a>
+<a name="ln1979">	EATAB;</a>
+<a name="ln1980">#endif</a>
+<a name="ln1981"> </a>
+<a name="ln1982">	/*</a>
+<a name="ln1983">	 * Parse the type.</a>
+<a name="ln1984">	 */</a>
+<a name="ln1985">	if (*l == 'u') {</a>
+<a name="ln1986">		/*</a>
+<a name="ln1987">		 * Try it as a keyword type prefixed by &quot;u&quot;; match what</a>
+<a name="ln1988">		 * follows the &quot;u&quot;.  If that fails, try it as an SUS</a>
+<a name="ln1989">		 * integer type. </a>
+<a name="ln1990">		 */</a>
+<a name="ln1991">		m-&gt;type = get_type(type_tbl, l + 1, &amp;l);</a>
+<a name="ln1992">		if (m-&gt;type == FILE_INVALID) {</a>
+<a name="ln1993">			/*</a>
+<a name="ln1994">			 * Not a keyword type; parse it as an SUS type,</a>
+<a name="ln1995">			 * 'u' possibly followed by a number or C/S/L.</a>
+<a name="ln1996">			 */</a>
+<a name="ln1997">			m-&gt;type = get_standard_integer_type(l, &amp;l);</a>
+<a name="ln1998">		}</a>
+<a name="ln1999">		/* It's unsigned. */</a>
+<a name="ln2000">		if (m-&gt;type != FILE_INVALID)</a>
+<a name="ln2001">			m-&gt;flag |= UNSIGNED;</a>
+<a name="ln2002">	} else {</a>
+<a name="ln2003">		/*</a>
+<a name="ln2004">		 * Try it as a keyword type.  If that fails, try it as</a>
+<a name="ln2005">		 * an SUS integer type if it begins with &quot;d&quot; or as an</a>
+<a name="ln2006">		 * SUS string type if it begins with &quot;s&quot;.  In any case,</a>
+<a name="ln2007">		 * it's not unsigned.</a>
+<a name="ln2008">		 */</a>
+<a name="ln2009">		m-&gt;type = get_type(type_tbl, l, &amp;l);</a>
+<a name="ln2010">		if (m-&gt;type == FILE_INVALID) {</a>
+<a name="ln2011">			/*</a>
+<a name="ln2012">			 * Not a keyword type; parse it as an SUS type,</a>
+<a name="ln2013">			 * either 'd' possibly followed by a number or</a>
+<a name="ln2014">			 * C/S/L, or just 's'.</a>
+<a name="ln2015">			 */</a>
+<a name="ln2016">			if (*l == 'd')</a>
+<a name="ln2017">				m-&gt;type = get_standard_integer_type(l, &amp;l);</a>
+<a name="ln2018">			else if (*l == 's' &amp;&amp; !isalpha((unsigned char)l[1])) {</a>
+<a name="ln2019">				m-&gt;type = FILE_STRING;</a>
+<a name="ln2020">				++l;</a>
+<a name="ln2021">			}</a>
+<a name="ln2022">		}</a>
+<a name="ln2023">	}</a>
+<a name="ln2024"> </a>
+<a name="ln2025">	if (m-&gt;type == FILE_INVALID) {</a>
+<a name="ln2026">		/* Not found - try it as a special keyword. */</a>
+<a name="ln2027">		m-&gt;type = get_type(special_tbl, l, &amp;l);</a>
+<a name="ln2028">	}</a>
+<a name="ln2029">			</a>
+<a name="ln2030">	if (m-&gt;type == FILE_INVALID) {</a>
+<a name="ln2031">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2032">			file_magwarn(ms, &quot;type `%s' invalid&quot;, l);</a>
+<a name="ln2033">		return -1;</a>
+<a name="ln2034">	}</a>
+<a name="ln2035"> </a>
+<a name="ln2036">	/* New-style anding: &quot;0 byte&amp;0x80 =0x80 dynamically linked&quot; */</a>
+<a name="ln2037">	/* New and improved: ~ &amp; | ^ + - * / % -- exciting, isn't it? */</a>
+<a name="ln2038"> </a>
+<a name="ln2039">	m-&gt;mask_op = 0;</a>
+<a name="ln2040">	if (*l == '~') {</a>
+<a name="ln2041">		if (!IS_STRING(m-&gt;type))</a>
+<a name="ln2042">			m-&gt;mask_op |= FILE_OPINVERSE;</a>
+<a name="ln2043">		else if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2044">			file_magwarn(ms, &quot;'~' invalid for string types&quot;);</a>
+<a name="ln2045">		++l;</a>
+<a name="ln2046">	}</a>
+<a name="ln2047">	m-&gt;str_range = 0;</a>
+<a name="ln2048">	m-&gt;str_flags = m-&gt;type == FILE_PSTRING ? PSTRING_1_LE : 0;</a>
+<a name="ln2049">	if ((op = get_op(*l)) != -1) {</a>
+<a name="ln2050">		if (IS_STRING(m-&gt;type)) {</a>
+<a name="ln2051">			int r;</a>
+<a name="ln2052"> </a>
+<a name="ln2053">			if (op != FILE_OPDIVIDE) {</a>
+<a name="ln2054">				if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2055">					file_magwarn(ms,</a>
+<a name="ln2056">					    &quot;invalid string/indirect op: &quot;</a>
+<a name="ln2057">					    &quot;`%c'&quot;, *t);</a>
+<a name="ln2058">				return -1;</a>
+<a name="ln2059">			}</a>
+<a name="ln2060"> </a>
+<a name="ln2061">			if (m-&gt;type == FILE_INDIRECT)</a>
+<a name="ln2062">				r = parse_indirect_modifier(ms, m, &amp;l);</a>
+<a name="ln2063">			else</a>
+<a name="ln2064">				r = parse_string_modifier(ms, m, &amp;l);</a>
+<a name="ln2065">			if (r == -1)</a>
+<a name="ln2066">				return -1;</a>
+<a name="ln2067">		} else</a>
+<a name="ln2068">			parse_op_modifier(ms, m, &amp;l, op);</a>
+<a name="ln2069">	}</a>
+<a name="ln2070"> </a>
+<a name="ln2071">	/*</a>
+<a name="ln2072">	 * We used to set mask to all 1's here, instead let's just not do</a>
+<a name="ln2073">	 * anything if mask = 0 (unless you have a better idea)</a>
+<a name="ln2074">	 */</a>
+<a name="ln2075">	EATAB;</a>
+<a name="ln2076">  </a>
+<a name="ln2077">	switch (*l) {</a>
+<a name="ln2078">	case '&gt;':</a>
+<a name="ln2079">	case '&lt;':</a>
+<a name="ln2080">  		m-&gt;reln = *l;</a>
+<a name="ln2081">  		++l;</a>
+<a name="ln2082">		if (*l == '=') {</a>
+<a name="ln2083">			if (ms-&gt;flags &amp; MAGIC_CHECK) {</a>
+<a name="ln2084">				file_magwarn(ms, &quot;%c= not supported&quot;,</a>
+<a name="ln2085">				    m-&gt;reln);</a>
+<a name="ln2086">				return -1;</a>
+<a name="ln2087">			}</a>
+<a name="ln2088">		   ++l;</a>
+<a name="ln2089">		}</a>
+<a name="ln2090">		break;</a>
+<a name="ln2091">	/* Old-style anding: &quot;0 byte &amp;0x80 dynamically linked&quot; */</a>
+<a name="ln2092">	case '&amp;':</a>
+<a name="ln2093">	case '^':</a>
+<a name="ln2094">	case '=':</a>
+<a name="ln2095">  		m-&gt;reln = *l;</a>
+<a name="ln2096">  		++l;</a>
+<a name="ln2097">		if (*l == '=') {</a>
+<a name="ln2098">		   /* HP compat: ignore &amp;= etc. */</a>
+<a name="ln2099">		   ++l;</a>
+<a name="ln2100">		}</a>
+<a name="ln2101">		break;</a>
+<a name="ln2102">	case '!':</a>
+<a name="ln2103">		m-&gt;reln = *l;</a>
+<a name="ln2104">		++l;</a>
+<a name="ln2105">		break;</a>
+<a name="ln2106">	default:</a>
+<a name="ln2107">  		m-&gt;reln = '=';	/* the default relation */</a>
+<a name="ln2108">		if (*l == 'x' &amp;&amp; ((isascii((unsigned char)l[1]) &amp;&amp; </a>
+<a name="ln2109">		    isspace((unsigned char)l[1])) || !l[1])) {</a>
+<a name="ln2110">			m-&gt;reln = *l;</a>
+<a name="ln2111">			++l;</a>
+<a name="ln2112">		}</a>
+<a name="ln2113">		break;</a>
+<a name="ln2114">	}</a>
+<a name="ln2115">	/*</a>
+<a name="ln2116">	 * Grab the value part, except for an 'x' reln.</a>
+<a name="ln2117">	 */</a>
+<a name="ln2118">	if (m-&gt;reln != 'x' &amp;&amp; getvalue(ms, m, &amp;l, action))</a>
+<a name="ln2119">		return -1;</a>
+<a name="ln2120"> </a>
+<a name="ln2121">	/*</a>
+<a name="ln2122">	 * TODO finish this macro and start using it!</a>
+<a name="ln2123">	 * #define offsetcheck {if (offset &gt; ms-&gt;bytes_max -1) </a>
+<a name="ln2124">	 *	magwarn(&quot;offset too big&quot;); }</a>
+<a name="ln2125">	 */</a>
+<a name="ln2126"> </a>
+<a name="ln2127">	/*</a>
+<a name="ln2128">	 * Now get last part - the description</a>
+<a name="ln2129">	 */</a>
+<a name="ln2130">	EATAB;</a>
+<a name="ln2131">	if (l[0] == '\b') {</a>
+<a name="ln2132">		++l;</a>
+<a name="ln2133">		m-&gt;flag |= NOSPACE;</a>
+<a name="ln2134">	} else if ((l[0] == '\\') &amp;&amp; (l[1] == 'b')) {</a>
+<a name="ln2135">		++l;</a>
+<a name="ln2136">		++l;</a>
+<a name="ln2137">		m-&gt;flag |= NOSPACE;</a>
+<a name="ln2138">	}</a>
+<a name="ln2139">	for (i = 0; (m-&gt;desc[i++] = *l++) != '\0' &amp;&amp; i &lt; sizeof(m-&gt;desc); )</a>
+<a name="ln2140">		continue;</a>
+<a name="ln2141">	if (i == sizeof(m-&gt;desc)) {</a>
+<a name="ln2142">		m-&gt;desc[sizeof(m-&gt;desc) - 1] = '\0';</a>
+<a name="ln2143">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2144">			file_magwarn(ms, &quot;description `%s' truncated&quot;, m-&gt;desc);</a>
+<a name="ln2145">	}</a>
+<a name="ln2146"> </a>
+<a name="ln2147">        /*</a>
+<a name="ln2148">	 * We only do this check while compiling, or if any of the magic</a>
+<a name="ln2149">	 * files were not compiled.</a>
+<a name="ln2150">         */</a>
+<a name="ln2151">        if (ms-&gt;flags &amp; MAGIC_CHECK) {</a>
+<a name="ln2152">		if (check_format(ms, m) == -1)</a>
+<a name="ln2153">			return -1;</a>
+<a name="ln2154">	}</a>
+<a name="ln2155">#ifndef COMPILE_ONLY</a>
+<a name="ln2156">	if (action == FILE_CHECK) {</a>
+<a name="ln2157">		file_mdump(m);</a>
+<a name="ln2158">	}</a>
+<a name="ln2159">#endif</a>
+<a name="ln2160">	m-&gt;mimetype[0] = '\0';		/* initialise MIME type to none */</a>
+<a name="ln2161">	return 0;</a>
+<a name="ln2162">}</a>
+<a name="ln2163"> </a>
+<a name="ln2164">/*</a>
+<a name="ln2165"> * parse a STRENGTH annotation line from magic file, put into magic[index - 1]</a>
+<a name="ln2166"> * if valid</a>
+<a name="ln2167"> */</a>
+<a name="ln2168">private int</a>
+<a name="ln2169">parse_strength(struct magic_set *ms, struct magic_entry *me, const char *line)</a>
+<a name="ln2170">{</a>
+<a name="ln2171">	const char *l = line;</a>
+<a name="ln2172">	char *el;</a>
+<a name="ln2173">	unsigned long factor;</a>
+<a name="ln2174">	struct magic *m = &amp;me-&gt;mp[0];</a>
+<a name="ln2175"> </a>
+<a name="ln2176">	if (m-&gt;factor_op != FILE_FACTOR_OP_NONE) {</a>
+<a name="ln2177">		file_magwarn(ms,</a>
+<a name="ln2178">		    &quot;Current entry already has a strength type: %c %d&quot;,</a>
+<a name="ln2179">		    m-&gt;factor_op, m-&gt;factor);</a>
+<a name="ln2180">		return -1;</a>
+<a name="ln2181">	}</a>
+<a name="ln2182">	if (m-&gt;type == FILE_NAME) {</a>
+<a name="ln2183">		file_magwarn(ms, &quot;%s: Strength setting is not supported in &quot;</a>
+<a name="ln2184">		    &quot;\&quot;name\&quot; magic entries&quot;, m-&gt;value.s);</a>
+<a name="ln2185">		return -1;</a>
+<a name="ln2186">	}</a>
+<a name="ln2187">	EATAB;</a>
+<a name="ln2188">	switch (*l) {</a>
+<a name="ln2189">	case FILE_FACTOR_OP_NONE:</a>
+<a name="ln2190">	case FILE_FACTOR_OP_PLUS:</a>
+<a name="ln2191">	case FILE_FACTOR_OP_MINUS:</a>
+<a name="ln2192">	case FILE_FACTOR_OP_TIMES:</a>
+<a name="ln2193">	case FILE_FACTOR_OP_DIV:</a>
+<a name="ln2194">		m-&gt;factor_op = *l++;</a>
+<a name="ln2195">		break;</a>
+<a name="ln2196">	default:</a>
+<a name="ln2197">		file_magwarn(ms, &quot;Unknown factor op `%c'&quot;, *l);</a>
+<a name="ln2198">		return -1;</a>
+<a name="ln2199">	}</a>
+<a name="ln2200">	EATAB;</a>
+<a name="ln2201">	factor = strtoul(l, &amp;el, 0);</a>
+<a name="ln2202">	if (factor &gt; 255) {</a>
+<a name="ln2203">		file_magwarn(ms, &quot;Too large factor `%lu'&quot;, factor);</a>
+<a name="ln2204">		goto out;</a>
+<a name="ln2205">	}</a>
+<a name="ln2206">	if (*el &amp;&amp; !isspace((unsigned char)*el)) {</a>
+<a name="ln2207">		file_magwarn(ms, &quot;Bad factor `%s'&quot;, l);</a>
+<a name="ln2208">		goto out;</a>
+<a name="ln2209">	}</a>
+<a name="ln2210">	m-&gt;factor = (uint8_t)factor;</a>
+<a name="ln2211">	if (m-&gt;factor == 0 &amp;&amp; m-&gt;factor_op == FILE_FACTOR_OP_DIV) {</a>
+<a name="ln2212">		file_magwarn(ms, &quot;Cannot have factor op `%c' and factor %u&quot;,</a>
+<a name="ln2213">		    m-&gt;factor_op, m-&gt;factor);</a>
+<a name="ln2214">		goto out;</a>
+<a name="ln2215">	}</a>
+<a name="ln2216">	return 0;</a>
+<a name="ln2217">out:</a>
+<a name="ln2218">	m-&gt;factor_op = FILE_FACTOR_OP_NONE;</a>
+<a name="ln2219">	m-&gt;factor = 0;</a>
+<a name="ln2220">	return -1;</a>
+<a name="ln2221">}</a>
+<a name="ln2222"> </a>
+<a name="ln2223">private int</a>
+<a name="ln2224">goodchar(unsigned char x, const char *extra)</a>
+<a name="ln2225">{</a>
+<a name="ln2226">	return (isascii(x) &amp;&amp; isalnum(x)) || strchr(extra, x);</a>
+<a name="ln2227">}</a>
+<a name="ln2228"> </a>
+<a name="ln2229">private int</a>
+<a name="ln2230">parse_extra(struct magic_set *ms, struct magic_entry *me, const char *line,</a>
+<a name="ln2231">    off_t off, size_t len, const char *name, const char *extra, int nt)</a>
+<a name="ln2232">{</a>
+<a name="ln2233">	size_t i;</a>
+<a name="ln2234">	const char *l = line;</a>
+<a name="ln2235">	struct magic *m = &amp;me-&gt;mp[me-&gt;cont_count == 0 ? 0 : me-&gt;cont_count - 1];</a>
+<a name="ln2236">	char *buf = CAST(char *, CAST(void *, m)) + off;</a>
+<a name="ln2237"> </a>
+<a name="ln2238">	if (buf[0] != '\0') {</a>
+<a name="ln2239">		len = nt ? strlen(buf) : len;</a>
+<a name="ln2240">		file_magwarn(ms, &quot;Current entry already has a %s type &quot;</a>
+<a name="ln2241">		    &quot;`%.*s', new type `%s'&quot;, name, (int)len, buf, l);</a>
+<a name="ln2242">		return -1;</a>
+<a name="ln2243">	}	</a>
+<a name="ln2244"> </a>
+<a name="ln2245">	if (*m-&gt;desc == '\0') {</a>
+<a name="ln2246">		file_magwarn(ms, &quot;Current entry does not yet have a &quot;</a>
+<a name="ln2247">		    &quot;description for adding a %s type&quot;, name);</a>
+<a name="ln2248">		return -1;</a>
+<a name="ln2249">	}</a>
+<a name="ln2250"> </a>
+<a name="ln2251">	EATAB;</a>
+<a name="ln2252">	for (i = 0; *l &amp;&amp; i &lt; len &amp;&amp; goodchar(*l, extra); buf[i++] = *l++)</a>
+<a name="ln2253">		continue;</a>
+<a name="ln2254"> </a>
+<a name="ln2255">	if (i == len &amp;&amp; *l) {</a>
+<a name="ln2256">		if (nt)</a>
+<a name="ln2257">			buf[len - 1] = '\0';</a>
+<a name="ln2258">		if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2259">			file_magwarn(ms, &quot;%s type `%s' truncated %&quot;</a>
+<a name="ln2260">			    SIZE_T_FORMAT &quot;u&quot;, name, line, i);</a>
+<a name="ln2261">	} else {</a>
+<a name="ln2262">		if (!isspace((unsigned char)*l) &amp;&amp; !goodchar(*l, extra))</a>
+<a name="ln2263">			file_magwarn(ms, &quot;%s type `%s' has bad char '%c'&quot;,</a>
+<a name="ln2264">			    name, line, *l);</a>
+<a name="ln2265">		if (nt)</a>
+<a name="ln2266">			buf[i] = '\0';</a>
+<a name="ln2267">	}</a>
+<a name="ln2268"> </a>
+<a name="ln2269">	if (i &gt; 0)</a>
+<a name="ln2270">		return 0;</a>
+<a name="ln2271"> </a>
+<a name="ln2272">	file_magerror(ms, &quot;Bad magic entry '%s'&quot;, line);</a>
+<a name="ln2273">	return -1;</a>
+<a name="ln2274">}</a>
+<a name="ln2275"> </a>
+<a name="ln2276">/*</a>
+<a name="ln2277"> * Parse an Apple CREATOR/TYPE annotation from magic file and put it into</a>
+<a name="ln2278"> * magic[index - 1]</a>
+<a name="ln2279"> */</a>
+<a name="ln2280">private int</a>
+<a name="ln2281">parse_apple(struct magic_set *ms, struct magic_entry *me, const char *line)</a>
+<a name="ln2282">{</a>
+<a name="ln2283">	struct magic *m = &amp;me-&gt;mp[0];</a>
+<a name="ln2284"> </a>
+<a name="ln2285">	return parse_extra(ms, me, line,</a>
+<a name="ln2286">	    CAST(off_t, offsetof(struct magic, apple)),</a>
+<a name="ln2287">	    sizeof(m-&gt;apple), &quot;APPLE&quot;, &quot;!+-./?&quot;, 0);</a>
+<a name="ln2288">}</a>
+<a name="ln2289"> </a>
+<a name="ln2290">/*</a>
+<a name="ln2291"> * Parse a comma-separated list of extensions</a>
+<a name="ln2292"> */</a>
+<a name="ln2293">private int</a>
+<a name="ln2294">parse_ext(struct magic_set *ms, struct magic_entry *me, const char *line)</a>
+<a name="ln2295">{</a>
+<a name="ln2296">	struct magic *m = &amp;me-&gt;mp[0];</a>
+<a name="ln2297"> </a>
+<a name="ln2298">	return parse_extra(ms, me, line,</a>
+<a name="ln2299">	    CAST(off_t, offsetof(struct magic, ext)),</a>
+<a name="ln2300">	    sizeof(m-&gt;ext), &quot;EXTENSION&quot;, &quot;,!+-/@&quot;, 0);</a>
+<a name="ln2301">}</a>
+<a name="ln2302"> </a>
+<a name="ln2303">/*</a>
+<a name="ln2304"> * parse a MIME annotation line from magic file, put into magic[index - 1]</a>
+<a name="ln2305"> * if valid</a>
+<a name="ln2306"> */</a>
+<a name="ln2307">private int</a>
+<a name="ln2308">parse_mime(struct magic_set *ms, struct magic_entry *me, const char *line)</a>
+<a name="ln2309">{</a>
+<a name="ln2310">	struct magic *m = &amp;me-&gt;mp[0];</a>
+<a name="ln2311"> </a>
+<a name="ln2312">	return parse_extra(ms, me, line,</a>
+<a name="ln2313">	    CAST(off_t, offsetof(struct magic, mimetype)),</a>
+<a name="ln2314">	    sizeof(m-&gt;mimetype), &quot;MIME&quot;, &quot;+-/.&quot;, 1);</a>
+<a name="ln2315">}</a>
+<a name="ln2316"> </a>
+<a name="ln2317">private int</a>
+<a name="ln2318">check_format_type(const char *ptr, int type, const char **estr)</a>
+<a name="ln2319">{</a>
+<a name="ln2320">	int quad = 0, h;</a>
+<a name="ln2321">	size_t len, cnt;</a>
+<a name="ln2322">	if (*ptr == '\0') {</a>
+<a name="ln2323">		/* Missing format string; bad */</a>
+<a name="ln2324">		*estr = &quot;missing format spec&quot;;</a>
+<a name="ln2325">		return -1;</a>
+<a name="ln2326">	}</a>
+<a name="ln2327"> </a>
+<a name="ln2328">	switch (file_formats[type]) {</a>
+<a name="ln2329">	case FILE_FMT_QUAD:</a>
+<a name="ln2330">		quad = 1;</a>
+<a name="ln2331">		/*FALLTHROUGH*/</a>
+<a name="ln2332">	case FILE_FMT_NUM:</a>
+<a name="ln2333">		if (quad == 0) {</a>
+<a name="ln2334">			switch (type) {</a>
+<a name="ln2335">			case FILE_BYTE:</a>
+<a name="ln2336">				h = 2;</a>
+<a name="ln2337">				break;</a>
+<a name="ln2338">			case FILE_SHORT:</a>
+<a name="ln2339">			case FILE_BESHORT:</a>
+<a name="ln2340">			case FILE_LESHORT:</a>
+<a name="ln2341">				h = 1;</a>
+<a name="ln2342">				break;</a>
+<a name="ln2343">			case FILE_LONG:</a>
+<a name="ln2344">			case FILE_BELONG:</a>
+<a name="ln2345">			case FILE_LELONG:</a>
+<a name="ln2346">			case FILE_MELONG:</a>
+<a name="ln2347">			case FILE_LEID3:</a>
+<a name="ln2348">			case FILE_BEID3:</a>
+<a name="ln2349">			case FILE_INDIRECT:</a>
+<a name="ln2350">				h = 0;</a>
+<a name="ln2351">				break;</a>
+<a name="ln2352">			default:</a>
+<a name="ln2353">				abort();</a>
+<a name="ln2354">			}</a>
+<a name="ln2355">		} else</a>
+<a name="ln2356">			h = 0;</a>
+<a name="ln2357">		if (*ptr == '-')</a>
+<a name="ln2358">			ptr++;</a>
+<a name="ln2359">		if (*ptr == '.')</a>
+<a name="ln2360">			ptr++;</a>
+<a name="ln2361">		if (*ptr == '#')</a>
+<a name="ln2362">			ptr++;</a>
+<a name="ln2363">#define CHECKLEN() do { \</a>
+<a name="ln2364">	for (len = cnt = 0; isdigit((unsigned char)*ptr); ptr++, cnt++) \</a>
+<a name="ln2365">		len = len * 10 + (*ptr - '0'); \</a>
+<a name="ln2366">	if (cnt &gt; 5 || len &gt; 1024) \</a>
+<a name="ln2367">		goto toolong; \</a>
+<a name="ln2368">} while (/*CONSTCOND*/0)</a>
+<a name="ln2369"> </a>
+<a name="ln2370">		CHECKLEN();</a>
+<a name="ln2371">		if (*ptr == '.')</a>
+<a name="ln2372">			ptr++;</a>
+<a name="ln2373">		CHECKLEN();</a>
+<a name="ln2374">		if (quad) {</a>
+<a name="ln2375">			if (*ptr++ != 'l')</a>
+<a name="ln2376">				goto invalid;</a>
+<a name="ln2377">			if (*ptr++ != 'l')</a>
+<a name="ln2378">				goto invalid;</a>
+<a name="ln2379">		}</a>
+<a name="ln2380">	</a>
+<a name="ln2381">		switch (*ptr++) {</a>
+<a name="ln2382">#ifdef STRICT_FORMAT 	/* &quot;long&quot; formats are int formats for us */</a>
+<a name="ln2383">		/* so don't accept the 'l' modifier */</a>
+<a name="ln2384">		case 'l':</a>
+<a name="ln2385">			switch (*ptr++) {</a>
+<a name="ln2386">			case 'i':</a>
+<a name="ln2387">			case 'd':</a>
+<a name="ln2388">			case 'u':</a>
+<a name="ln2389">			case 'o':</a>
+<a name="ln2390">			case 'x':</a>
+<a name="ln2391">			case 'X':</a>
+<a name="ln2392">				if (h == 0)</a>
+<a name="ln2393">					return 0;</a>
+<a name="ln2394">				/*FALLTHROUGH*/</a>
+<a name="ln2395">			default:</a>
+<a name="ln2396">				goto invalid;</a>
+<a name="ln2397">			}</a>
+<a name="ln2398">		</a>
+<a name="ln2399">		/*</a>
+<a name="ln2400">		 * Don't accept h and hh modifiers. They make writing</a>
+<a name="ln2401">		 * magic entries more complicated, for very little benefit</a>
+<a name="ln2402">		 */</a>
+<a name="ln2403">		case 'h':</a>
+<a name="ln2404">			if (h-- &lt;= 0)</a>
+<a name="ln2405">				goto invalid;</a>
+<a name="ln2406">			switch (*ptr++) {</a>
+<a name="ln2407">			case 'h':</a>
+<a name="ln2408">				if (h-- &lt;= 0)</a>
+<a name="ln2409">					goto invalid;</a>
+<a name="ln2410">				switch (*ptr++) {</a>
+<a name="ln2411">				case 'i':</a>
+<a name="ln2412">				case 'd':</a>
+<a name="ln2413">				case 'u':</a>
+<a name="ln2414">				case 'o':</a>
+<a name="ln2415">				case 'x':</a>
+<a name="ln2416">				case 'X':</a>
+<a name="ln2417">					return 0;</a>
+<a name="ln2418">				default:</a>
+<a name="ln2419">					goto invalid;</a>
+<a name="ln2420">				}</a>
+<a name="ln2421">			case 'i':</a>
+<a name="ln2422">			case 'd':</a>
+<a name="ln2423">			case 'u':</a>
+<a name="ln2424">			case 'o':</a>
+<a name="ln2425">			case 'x':</a>
+<a name="ln2426">			case 'X':</a>
+<a name="ln2427">				if (h == 0)</a>
+<a name="ln2428">					return 0;</a>
+<a name="ln2429">				/*FALLTHROUGH*/</a>
+<a name="ln2430">			default:</a>
+<a name="ln2431">				goto invalid;</a>
+<a name="ln2432">			}</a>
+<a name="ln2433">#endif</a>
+<a name="ln2434">		case 'c':</a>
+<a name="ln2435">			if (h == 2)</a>
+<a name="ln2436">				return 0;</a>
+<a name="ln2437">			goto invalid;</a>
+<a name="ln2438">		case 'i':</a>
+<a name="ln2439">		case 'd':</a>
+<a name="ln2440">		case 'u':</a>
+<a name="ln2441">		case 'o':</a>
+<a name="ln2442">		case 'x':</a>
+<a name="ln2443">		case 'X':</a>
+<a name="ln2444">#ifdef STRICT_FORMAT</a>
+<a name="ln2445">			if (h == 0)</a>
+<a name="ln2446">				return 0;</a>
+<a name="ln2447">			/*FALLTHROUGH*/</a>
+<a name="ln2448">#else</a>
+<a name="ln2449">			return 0;</a>
+<a name="ln2450">#endif</a>
+<a name="ln2451">		default:</a>
+<a name="ln2452">			goto invalid;</a>
+<a name="ln2453">		}</a>
+<a name="ln2454">		</a>
+<a name="ln2455">	case FILE_FMT_FLOAT:</a>
+<a name="ln2456">	case FILE_FMT_DOUBLE:</a>
+<a name="ln2457">		if (*ptr == '-')</a>
+<a name="ln2458">			ptr++;</a>
+<a name="ln2459">		if (*ptr == '.')</a>
+<a name="ln2460">			ptr++;</a>
+<a name="ln2461">		CHECKLEN();</a>
+<a name="ln2462">		if (*ptr == '.')</a>
+<a name="ln2463">			ptr++;</a>
+<a name="ln2464">		CHECKLEN();</a>
+<a name="ln2465">		switch (*ptr++) {</a>
+<a name="ln2466">		case 'e':</a>
+<a name="ln2467">		case 'E':</a>
+<a name="ln2468">		case 'f':</a>
+<a name="ln2469">		case 'F':</a>
+<a name="ln2470">		case 'g':</a>
+<a name="ln2471">		case 'G':</a>
+<a name="ln2472">			return 0;</a>
+<a name="ln2473">			</a>
+<a name="ln2474">		default:</a>
+<a name="ln2475">			goto invalid;</a>
+<a name="ln2476">		}</a>
+<a name="ln2477">		</a>
+<a name="ln2478"> </a>
+<a name="ln2479">	case FILE_FMT_STR:</a>
+<a name="ln2480">		if (*ptr == '-')</a>
+<a name="ln2481">			ptr++;</a>
+<a name="ln2482">		while (isdigit((unsigned char )*ptr))</a>
+<a name="ln2483">			ptr++;</a>
+<a name="ln2484">		if (*ptr == '.') {</a>
+<a name="ln2485">			ptr++;</a>
+<a name="ln2486">			while (isdigit((unsigned char )*ptr))</a>
+<a name="ln2487">				ptr++;</a>
+<a name="ln2488">		}</a>
+<a name="ln2489">		</a>
+<a name="ln2490">		switch (*ptr++) {</a>
+<a name="ln2491">		case 's':</a>
+<a name="ln2492">			return 0;</a>
+<a name="ln2493">		default:</a>
+<a name="ln2494">			goto invalid;</a>
+<a name="ln2495">		}</a>
+<a name="ln2496">		</a>
+<a name="ln2497">	default:</a>
+<a name="ln2498">		/* internal error */</a>
+<a name="ln2499">		abort();</a>
+<a name="ln2500">	}</a>
+<a name="ln2501">invalid:</a>
+<a name="ln2502">	*estr = &quot;not valid&quot;;</a>
+<a name="ln2503">toolong:</a>
+<a name="ln2504">	*estr = &quot;too long&quot;;</a>
+<a name="ln2505">	return -1;</a>
+<a name="ln2506">}</a>
+<a name="ln2507">	</a>
+<a name="ln2508">/*</a>
+<a name="ln2509"> * Check that the optional printf format in description matches</a>
+<a name="ln2510"> * the type of the magic.</a>
+<a name="ln2511"> */</a>
+<a name="ln2512">private int</a>
+<a name="ln2513">check_format(struct magic_set *ms, struct magic *m)</a>
+<a name="ln2514">{</a>
+<a name="ln2515">	char *ptr;</a>
+<a name="ln2516">	const char *estr;</a>
+<a name="ln2517"> </a>
+<a name="ln2518">	for (ptr = m-&gt;desc; *ptr; ptr++)</a>
+<a name="ln2519">		if (*ptr == '%')</a>
+<a name="ln2520">			break;</a>
+<a name="ln2521">	if (*ptr == '\0') {</a>
+<a name="ln2522">		/* No format string; ok */</a>
+<a name="ln2523">		return 1;</a>
+<a name="ln2524">	}</a>
+<a name="ln2525"> </a>
+<a name="ln2526">	assert(file_nformats == file_nnames);</a>
+<a name="ln2527"> </a>
+<a name="ln2528">	if (m-&gt;type &gt;= file_nformats) {</a>
+<a name="ln2529">		file_magwarn(ms, &quot;Internal error inconsistency between &quot;</a>
+<a name="ln2530">		    &quot;m-&gt;type and format strings&quot;);		</a>
+<a name="ln2531">		return -1;</a>
+<a name="ln2532">	}</a>
+<a name="ln2533">	if (file_formats[m-&gt;type] == FILE_FMT_NONE) {</a>
+<a name="ln2534">		file_magwarn(ms, &quot;No format string for `%s' with description &quot;</a>
+<a name="ln2535">		    &quot;`%s'&quot;, m-&gt;desc, file_names[m-&gt;type]);</a>
+<a name="ln2536">		return -1;</a>
+<a name="ln2537">	}</a>
+<a name="ln2538"> </a>
+<a name="ln2539">	ptr++;</a>
+<a name="ln2540">	if (check_format_type(ptr, m-&gt;type, &amp;estr) == -1) {</a>
+<a name="ln2541">		/*</a>
+<a name="ln2542">		 * TODO: this error message is unhelpful if the format</a>
+<a name="ln2543">		 * string is not one character long</a>
+<a name="ln2544">		 */</a>
+<a name="ln2545">		file_magwarn(ms, &quot;Printf format is %s for type &quot;</a>
+<a name="ln2546">		    &quot;`%s' in description `%s'&quot;, estr,</a>
+<a name="ln2547">		    file_names[m-&gt;type], m-&gt;desc);</a>
+<a name="ln2548">		return -1;</a>
+<a name="ln2549">	}</a>
+<a name="ln2550">	</a>
+<a name="ln2551">	for (; *ptr; ptr++) {</a>
+<a name="ln2552">		if (*ptr == '%') {</a>
+<a name="ln2553">			file_magwarn(ms,</a>
+<a name="ln2554">			    &quot;Too many format strings (should have at most one) &quot;</a>
+<a name="ln2555">			    &quot;for `%s' with description `%s'&quot;,</a>
+<a name="ln2556">			    file_names[m-&gt;type], m-&gt;desc);</a>
+<a name="ln2557">			return -1;</a>
+<a name="ln2558">		}</a>
+<a name="ln2559">	}</a>
+<a name="ln2560">	return 0;</a>
+<a name="ln2561">}</a>
+<a name="ln2562"> </a>
+<a name="ln2563">/* </a>
+<a name="ln2564"> * Read a numeric value from a pointer, into the value union of a magic </a>
+<a name="ln2565"> * pointer, according to the magic type.  Update the string pointer to point </a>
+<a name="ln2566"> * just after the number read.  Return 0 for success, non-zero for failure.</a>
+<a name="ln2567"> */</a>
+<a name="ln2568">private int</a>
+<a name="ln2569">getvalue(struct magic_set *ms, struct magic *m, const char **p, int action)</a>
+<a name="ln2570">{</a>
+<a name="ln2571">	switch (m-&gt;type) {</a>
+<a name="ln2572">	case FILE_BESTRING16:</a>
+<a name="ln2573">	case FILE_LESTRING16:</a>
+<a name="ln2574">	case FILE_STRING:</a>
+<a name="ln2575">	case FILE_PSTRING:</a>
+<a name="ln2576">	case FILE_REGEX:</a>
+<a name="ln2577">	case FILE_SEARCH:</a>
+<a name="ln2578">	case FILE_NAME:</a>
+<a name="ln2579">	case FILE_USE:</a>
+<a name="ln2580">	case FILE_DER:</a>
+<a name="ln2581">		*p = getstr(ms, m, *p, action == FILE_COMPILE);</a>
+<a name="ln2582">		if (*p == NULL) {</a>
+<a name="ln2583">			if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2584">				file_magwarn(ms, &quot;cannot get string from `%s'&quot;,</a>
+<a name="ln2585">				    m-&gt;value.s);</a>
+<a name="ln2586">			return -1;</a>
+<a name="ln2587">		}</a>
+<a name="ln2588">		if (m-&gt;type == FILE_REGEX) {</a>
+<a name="ln2589">			file_regex_t rx;</a>
+<a name="ln2590">			int rc = file_regcomp(&amp;rx, m-&gt;value.s, REG_EXTENDED);</a>
+<a name="ln2591">			if (rc) {</a>
+<a name="ln2592">				if (ms-&gt;flags &amp; MAGIC_CHECK)</a>
+<a name="ln2593">					file_regerror(&amp;rx, rc, ms);</a>
+<a name="ln2594">			}</a>
+<a name="ln2595">			file_regfree(&amp;rx);</a>
+<a name="ln2596">			return rc ? -1 : 0;</a>
+<a name="ln2597">		}</a>
+<a name="ln2598">		return 0;</a>
+<a name="ln2599">	case FILE_FLOAT:</a>
+<a name="ln2600">	case FILE_BEFLOAT:</a>
+<a name="ln2601">	case FILE_LEFLOAT:</a>
+<a name="ln2602">		if (m-&gt;reln != 'x') {</a>
+<a name="ln2603">			char *ep;</a>
+<a name="ln2604">			errno = 0;</a>
+<a name="ln2605">#ifdef HAVE_STRTOF</a>
+<a name="ln2606">			m-&gt;value.f = strtof(*p, &amp;ep);</a>
+<a name="ln2607">#else</a>
+<a name="ln2608">			m-&gt;value.f = (float)strtod(*p, &amp;ep);</a>
+<a name="ln2609">#endif</a>
+<a name="ln2610">			if (errno == 0)</a>
+<a name="ln2611">				*p = ep;</a>
+<a name="ln2612">		}</a>
+<a name="ln2613">		return 0;</a>
+<a name="ln2614">	case FILE_DOUBLE:</a>
+<a name="ln2615">	case FILE_BEDOUBLE:</a>
+<a name="ln2616">	case FILE_LEDOUBLE:</a>
+<a name="ln2617">		if (m-&gt;reln != 'x') {</a>
+<a name="ln2618">			char *ep;</a>
+<a name="ln2619">			errno = 0;</a>
+<a name="ln2620">			m-&gt;value.d = strtod(*p, &amp;ep);</a>
+<a name="ln2621">			if (errno == 0)</a>
+<a name="ln2622">				*p = ep;</a>
+<a name="ln2623">		}</a>
+<a name="ln2624">		return 0;</a>
+<a name="ln2625">	default:</a>
+<a name="ln2626">		if (m-&gt;reln != 'x') {</a>
+<a name="ln2627">			char *ep;</a>
+<a name="ln2628">			errno = 0;</a>
+<a name="ln2629">			m-&gt;value.q = file_signextend(ms, m,</a>
+<a name="ln2630">			    (uint64_t)strtoull(*p, &amp;ep, 0));</a>
+<a name="ln2631">			if (errno == 0) {</a>
+<a name="ln2632">				*p = ep;</a>
+<a name="ln2633">				eatsize(p);</a>
+<a name="ln2634">			}</a>
+<a name="ln2635">		}</a>
+<a name="ln2636">		return 0;</a>
+<a name="ln2637">	}</a>
+<a name="ln2638">}</a>
+<a name="ln2639"> </a>
+<a name="ln2640">/*</a>
+<a name="ln2641"> * Convert a string containing C character escapes.  Stop at an unescaped</a>
+<a name="ln2642"> * space or tab.</a>
+<a name="ln2643"> * Copy the converted version to &quot;m-&gt;value.s&quot;, and the length in m-&gt;vallen.</a>
+<a name="ln2644"> * Return updated scan pointer as function result. Warn if set.</a>
+<a name="ln2645"> */</a>
+<a name="ln2646">private const char *</a>
+<a name="ln2647">getstr(struct magic_set *ms, struct magic *m, const char *s, int warn)</a>
+<a name="ln2648">{</a>
+<a name="ln2649">	const char *origs = s;</a>
+<a name="ln2650">	char	*p = m-&gt;value.s;</a>
+<a name="ln2651">	size_t  plen = sizeof(m-&gt;value.s);</a>
+<a name="ln2652">	char 	*origp = p;</a>
+<a name="ln2653">	char	*pmax = p + plen - 1;</a>
+<a name="ln2654">	int	c;</a>
+<a name="ln2655">	int	val;</a>
+<a name="ln2656"> </a>
+<a name="ln2657">	while ((c = *s++) != '\0') {</a>
+<a name="ln2658">		if (isspace((unsigned char) c))</a>
+<a name="ln2659">			break;</a>
+<a name="ln2660">		if (p &gt;= pmax) {</a>
+<a name="ln2661">			file_error(ms, 0, &quot;string too long: `%s'&quot;, origs);</a>
+<a name="ln2662">			return NULL;</a>
+<a name="ln2663">		}</a>
+<a name="ln2664">		if (c == '\\') {</a>
+<a name="ln2665">			switch(c = *s++) {</a>
+<a name="ln2666"> </a>
+<a name="ln2667">			case '\0':</a>
+<a name="ln2668">				if (warn)</a>
+<a name="ln2669">					file_magwarn(ms, &quot;incomplete escape&quot;);</a>
+<a name="ln2670">				s--;</a>
+<a name="ln2671">				goto out;</a>
+<a name="ln2672"> </a>
+<a name="ln2673">			case '\t':</a>
+<a name="ln2674">				if (warn) {</a>
+<a name="ln2675">					file_magwarn(ms,</a>
+<a name="ln2676">					    &quot;escaped tab found, use \\t instead&quot;);</a>
+<a name="ln2677">					warn = 0;	/* already did */</a>
+<a name="ln2678">				}</a>
+<a name="ln2679">				/*FALLTHROUGH*/</a>
+<a name="ln2680">			default:</a>
+<a name="ln2681">				if (warn) {</a>
+<a name="ln2682">					if (isprint((unsigned char)c)) {</a>
+<a name="ln2683">						/* Allow escaping of </a>
+<a name="ln2684">						 * ``relations'' */</a>
+<a name="ln2685">						if (strchr(&quot;&lt;&gt;&amp;^=!&quot;, c) == NULL</a>
+<a name="ln2686">						    &amp;&amp; (m-&gt;type != FILE_REGEX ||</a>
+<a name="ln2687">						    strchr(&quot;[]().*?^$|{}&quot;, c)</a>
+<a name="ln2688">						    == NULL)) {</a>
+<a name="ln2689">							file_magwarn(ms, &quot;no &quot;</a>
+<a name="ln2690">							    &quot;need to escape &quot;</a>
+<a name="ln2691">							    &quot;`%c'&quot;, c);</a>
+<a name="ln2692">						}</a>
+<a name="ln2693">					} else {</a>
+<a name="ln2694">						file_magwarn(ms,</a>
+<a name="ln2695">						    &quot;unknown escape sequence: &quot;</a>
+<a name="ln2696">						    &quot;\\%03o&quot;, c);</a>
+<a name="ln2697">					}</a>
+<a name="ln2698">				}</a>
+<a name="ln2699">				/*FALLTHROUGH*/</a>
+<a name="ln2700">			/* space, perhaps force people to use \040? */</a>
+<a name="ln2701">			case ' ':</a>
+<a name="ln2702">#if 0</a>
+<a name="ln2703">			/*</a>
+<a name="ln2704">			 * Other things people escape, but shouldn't need to,</a>
+<a name="ln2705">			 * so we disallow them</a>
+<a name="ln2706">			 */</a>
+<a name="ln2707">			case '\'':</a>
+<a name="ln2708">			case '&quot;':</a>
+<a name="ln2709">			case '?':</a>
+<a name="ln2710">#endif</a>
+<a name="ln2711">			/* Relations */</a>
+<a name="ln2712">			case '&gt;':</a>
+<a name="ln2713">			case '&lt;':</a>
+<a name="ln2714">			case '&amp;':</a>
+<a name="ln2715">			case '^':</a>
+<a name="ln2716">			case '=':</a>
+<a name="ln2717">			case '!':</a>
+<a name="ln2718">			/* and baskslash itself */</a>
+<a name="ln2719">			case '\\':</a>
+<a name="ln2720">				*p++ = (char) c;</a>
+<a name="ln2721">				break;</a>
+<a name="ln2722"> </a>
+<a name="ln2723">			case 'a':</a>
+<a name="ln2724">				*p++ = '\a';</a>
+<a name="ln2725">				break;</a>
+<a name="ln2726"> </a>
+<a name="ln2727">			case 'b':</a>
+<a name="ln2728">				*p++ = '\b';</a>
+<a name="ln2729">				break;</a>
+<a name="ln2730"> </a>
+<a name="ln2731">			case 'f':</a>
+<a name="ln2732">				*p++ = '\f';</a>
+<a name="ln2733">				break;</a>
+<a name="ln2734"> </a>
+<a name="ln2735">			case 'n':</a>
+<a name="ln2736">				*p++ = '\n';</a>
+<a name="ln2737">				break;</a>
+<a name="ln2738"> </a>
+<a name="ln2739">			case 'r':</a>
+<a name="ln2740">				*p++ = '\r';</a>
+<a name="ln2741">				break;</a>
+<a name="ln2742"> </a>
+<a name="ln2743">			case 't':</a>
+<a name="ln2744">				*p++ = '\t';</a>
+<a name="ln2745">				break;</a>
+<a name="ln2746"> </a>
+<a name="ln2747">			case 'v':</a>
+<a name="ln2748">				*p++ = '\v';</a>
+<a name="ln2749">				break;</a>
+<a name="ln2750"> </a>
+<a name="ln2751">			/* \ and up to 3 octal digits */</a>
+<a name="ln2752">			case '0':</a>
+<a name="ln2753">			case '1':</a>
+<a name="ln2754">			case '2':</a>
+<a name="ln2755">			case '3':</a>
+<a name="ln2756">			case '4':</a>
+<a name="ln2757">			case '5':</a>
+<a name="ln2758">			case '6':</a>
+<a name="ln2759">			case '7':</a>
+<a name="ln2760">				val = c - '0';</a>
+<a name="ln2761">				c = *s++;  /* try for 2 */</a>
+<a name="ln2762">				if (c &gt;= '0' &amp;&amp; c &lt;= '7') {</a>
+<a name="ln2763">					val = (val &lt;&lt; 3) | (c - '0');</a>
+<a name="ln2764">					c = *s++;  /* try for 3 */</a>
+<a name="ln2765">					if (c &gt;= '0' &amp;&amp; c &lt;= '7')</a>
+<a name="ln2766">						val = (val &lt;&lt; 3) | (c-'0');</a>
+<a name="ln2767">					else</a>
+<a name="ln2768">						--s;</a>
+<a name="ln2769">				}</a>
+<a name="ln2770">				else</a>
+<a name="ln2771">					--s;</a>
+<a name="ln2772">				*p++ = (char)val;</a>
+<a name="ln2773">				break;</a>
+<a name="ln2774"> </a>
+<a name="ln2775">			/* \x and up to 2 hex digits */</a>
+<a name="ln2776">			case 'x':</a>
+<a name="ln2777">				val = 'x';	/* Default if no digits */</a>
+<a name="ln2778">				c = hextoint(*s++);	/* Get next char */</a>
+<a name="ln2779">				if (c &gt;= 0) {</a>
+<a name="ln2780">					val = c;</a>
+<a name="ln2781">					c = hextoint(*s++);</a>
+<a name="ln2782">					if (c &gt;= 0)</a>
+<a name="ln2783">						val = (val &lt;&lt; 4) + c;</a>
+<a name="ln2784">					else</a>
+<a name="ln2785">						--s;</a>
+<a name="ln2786">				} else</a>
+<a name="ln2787">					--s;</a>
+<a name="ln2788">				*p++ = (char)val;</a>
+<a name="ln2789">				break;</a>
+<a name="ln2790">			}</a>
+<a name="ln2791">		} else</a>
+<a name="ln2792">			*p++ = (char)c;</a>
+<a name="ln2793">	}</a>
+<a name="ln2794">	--s;</a>
+<a name="ln2795">out:</a>
+<a name="ln2796">	*p = '\0';</a>
+<a name="ln2797">	m-&gt;vallen = CAST(unsigned char, (p - origp));</a>
+<a name="ln2798">	if (m-&gt;type == FILE_PSTRING)</a>
+<a name="ln2799">		m-&gt;vallen += (unsigned char)file_pstring_length_size(m);</a>
+<a name="ln2800">	return s;</a>
+<a name="ln2801">}</a>
+<a name="ln2802"> </a>
+<a name="ln2803"> </a>
+<a name="ln2804">/* Single hex char to int; -1 if not a hex char. */</a>
+<a name="ln2805">private int</a>
+<a name="ln2806">hextoint(int c)</a>
+<a name="ln2807">{</a>
+<a name="ln2808">	if (!isascii((unsigned char) c))</a>
+<a name="ln2809">		return -1;</a>
+<a name="ln2810">	if (isdigit((unsigned char) c))</a>
+<a name="ln2811">		return c - '0';</a>
+<a name="ln2812">	if ((c &gt;= 'a') &amp;&amp; (c &lt;= 'f'))</a>
+<a name="ln2813">		return c + 10 - 'a';</a>
+<a name="ln2814">	if (( c&gt;= 'A') &amp;&amp; (c &lt;= 'F'))</a>
+<a name="ln2815">		return c + 10 - 'A';</a>
+<a name="ln2816">	return -1;</a>
+<a name="ln2817">}</a>
+<a name="ln2818"> </a>
+<a name="ln2819"> </a>
+<a name="ln2820">/*</a>
+<a name="ln2821"> * Print a string containing C character escapes.</a>
+<a name="ln2822"> */</a>
+<a name="ln2823">protected void</a>
+<a name="ln2824">file_showstr(FILE *fp, const char *s, size_t len)</a>
+<a name="ln2825">{</a>
+<a name="ln2826">	char	c;</a>
+<a name="ln2827"> </a>
+<a name="ln2828">	for (;;) {</a>
+<a name="ln2829">		if (len == ~0U) {</a>
+<a name="ln2830">			c = *s++;</a>
+<a name="ln2831">			if (c == '\0')</a>
+<a name="ln2832">				break;</a>
+<a name="ln2833">		}</a>
+<a name="ln2834">		else  {</a>
+<a name="ln2835">			if (len-- == 0)</a>
+<a name="ln2836">				break;</a>
+<a name="ln2837">			c = *s++;</a>
+<a name="ln2838">		}</a>
+<a name="ln2839">		if (c &gt;= 040 &amp;&amp; c &lt;= 0176)	/* TODO isprint &amp;&amp; !iscntrl */</a>
+<a name="ln2840">			(void) fputc(c, fp);</a>
+<a name="ln2841">		else {</a>
+<a name="ln2842">			(void) fputc('\\', fp);</a>
+<a name="ln2843">			switch (c) {</a>
+<a name="ln2844">			case '\a':</a>
+<a name="ln2845">				(void) fputc('a', fp);</a>
+<a name="ln2846">				break;</a>
+<a name="ln2847"> </a>
+<a name="ln2848">			case '\b':</a>
+<a name="ln2849">				(void) fputc('b', fp);</a>
+<a name="ln2850">				break;</a>
+<a name="ln2851"> </a>
+<a name="ln2852">			case '\f':</a>
+<a name="ln2853">				(void) fputc('f', fp);</a>
+<a name="ln2854">				break;</a>
+<a name="ln2855"> </a>
+<a name="ln2856">			case '\n':</a>
+<a name="ln2857">				(void) fputc('n', fp);</a>
+<a name="ln2858">				break;</a>
+<a name="ln2859"> </a>
+<a name="ln2860">			case '\r':</a>
+<a name="ln2861">				(void) fputc('r', fp);</a>
+<a name="ln2862">				break;</a>
+<a name="ln2863"> </a>
+<a name="ln2864">			case '\t':</a>
+<a name="ln2865">				(void) fputc('t', fp);</a>
+<a name="ln2866">				break;</a>
+<a name="ln2867"> </a>
+<a name="ln2868">			case '\v':</a>
+<a name="ln2869">				(void) fputc('v', fp);</a>
+<a name="ln2870">				break;</a>
+<a name="ln2871"> </a>
+<a name="ln2872">			default:</a>
+<a name="ln2873">				(void) fprintf(fp, &quot;%.3o&quot;, c &amp; 0377);</a>
+<a name="ln2874">				break;</a>
+<a name="ln2875">			}</a>
+<a name="ln2876">		}</a>
+<a name="ln2877">	}</a>
+<a name="ln2878">}</a>
+<a name="ln2879"> </a>
+<a name="ln2880">/*</a>
+<a name="ln2881"> * eatsize(): Eat the size spec from a number [eg. 10UL]</a>
+<a name="ln2882"> */</a>
+<a name="ln2883">private void</a>
+<a name="ln2884">eatsize(const char **p)</a>
+<a name="ln2885">{</a>
+<a name="ln2886">	const char *l = *p;</a>
+<a name="ln2887"> </a>
+<a name="ln2888">	if (LOWCASE(*l) == 'u') </a>
+<a name="ln2889">		l++;</a>
+<a name="ln2890"> </a>
+<a name="ln2891">	switch (LOWCASE(*l)) {</a>
+<a name="ln2892">	case 'l':    /* long */</a>
+<a name="ln2893">	case 's':    /* short */</a>
+<a name="ln2894">	case 'h':    /* short */</a>
+<a name="ln2895">	case 'b':    /* char/byte */</a>
+<a name="ln2896">	case 'c':    /* char/byte */</a>
+<a name="ln2897">		l++;</a>
+<a name="ln2898">		/*FALLTHROUGH*/</a>
+<a name="ln2899">	default:</a>
+<a name="ln2900">		break;</a>
+<a name="ln2901">	}</a>
+<a name="ln2902"> </a>
+<a name="ln2903">	*p = l;</a>
+<a name="ln2904">}</a>
+<a name="ln2905"> </a>
+<a name="ln2906">/*</a>
+<a name="ln2907"> * handle a buffer containing a compiled file.</a>
+<a name="ln2908"> */</a>
+<a name="ln2909">private struct magic_map *</a>
+<a name="ln2910">apprentice_buf(struct magic_set *ms, struct magic *buf, size_t len)</a>
+<a name="ln2911">{</a>
+<a name="ln2912">	struct magic_map *map;</a>
+<a name="ln2913"> </a>
+<a name="ln2914">	if ((map = CAST(struct magic_map *, calloc(1, sizeof(*map)))) == NULL) {</a>
+<a name="ln2915">		file_oomem(ms, sizeof(*map));</a>
+<a name="ln2916">		return NULL;</a>
+<a name="ln2917">	}</a>
+<a name="ln2918">	map-&gt;len = len;</a>
+<a name="ln2919">	map-&gt;p = buf;</a>
+<a name="ln2920">	map-&gt;type = MAP_TYPE_USER;</a>
+<a name="ln2921">	if (check_buffer(ms, map, &quot;buffer&quot;) != 0) {</a>
+<a name="ln2922">		apprentice_unmap(map);</a>
+<a name="ln2923">		return NULL;</a>
+<a name="ln2924">	}</a>
+<a name="ln2925">	return map;</a>
+<a name="ln2926">}</a>
+<a name="ln2927"> </a>
+<a name="ln2928">/*</a>
+<a name="ln2929"> * handle a compiled file.</a>
+<a name="ln2930"> */</a>
+<a name="ln2931"> </a>
+<a name="ln2932">private struct magic_map *</a>
+<a name="ln2933">apprentice_map(struct magic_set *ms, const char *fn)</a>
+<a name="ln2934">{</a>
+<a name="ln2935">	int fd;</a>
+<a name="ln2936">	struct stat st;</a>
+<a name="ln2937">	char *dbname = NULL;</a>
+<a name="ln2938">	struct magic_map *map;</a>
+<a name="ln2939">	struct magic_map *rv = NULL;</a>
+<a name="ln2940"> </a>
+<a name="ln2941">	fd = -1;</a>
+<a name="ln2942">	if ((map = CAST(struct magic_map *, calloc(1, sizeof(*map)))) == NULL) {</a>
+<a name="ln2943">		file_oomem(ms, sizeof(*map));</a>
+<a name="ln2944">		goto error;</a>
+<a name="ln2945">	}</a>
+<a name="ln2946">	map-&gt;type = MAP_TYPE_USER;	/* unspecified */</a>
+<a name="ln2947"> </a>
+<a name="ln2948">	dbname = mkdbname(ms, fn, 0);</a>
+<a name="ln2949">	if (dbname == NULL)</a>
+<a name="ln2950">		goto error;</a>
+<a name="ln2951"> </a>
+<a name="ln2952">	if ((fd = open(dbname, O_RDONLY|O_BINARY)) == -1)</a>
+<a name="ln2953">		goto error;</a>
+<a name="ln2954"> </a>
+<a name="ln2955">	if (fstat(fd, &amp;st) == -1) {</a>
+<a name="ln2956">		file_error(ms, errno, &quot;cannot stat `%s'&quot;, dbname);</a>
+<a name="ln2957">		goto error;</a>
+<a name="ln2958">	}</a>
+<a name="ln2959">	if (st.st_size &lt; 8 || st.st_size &gt; MAXMAGIC_SIZE) {</a>
+<a name="ln2960">		file_error(ms, 0, &quot;file `%s' is too %s&quot;, dbname,</a>
+<a name="ln2961">		    st.st_size &lt; 8 ? &quot;small&quot; : &quot;large&quot;);</a>
+<a name="ln2962">		goto error;</a>
+<a name="ln2963">	}</a>
+<a name="ln2964"> </a>
+<a name="ln2965">	map-&gt;len = (size_t)st.st_size;</a>
+<a name="ln2966">#ifdef QUICK</a>
+<a name="ln2967">	map-&gt;type = MAP_TYPE_MMAP;</a>
+<a name="ln2968">	if ((map-&gt;p = mmap(0, (size_t)st.st_size, PROT_READ|PROT_WRITE,</a>
+<a name="ln2969">	    MAP_PRIVATE|MAP_FILE, fd, (off_t)0)) == MAP_FAILED) {</a>
+<a name="ln2970">		file_error(ms, errno, &quot;cannot map `%s'&quot;, dbname);</a>
+<a name="ln2971">		goto error;</a>
+<a name="ln2972">	}</a>
+<a name="ln2973">#else</a>
+<a name="ln2974">	map-&gt;type = MAP_TYPE_MALLOC;</a>
+<a name="ln2975">	if ((map-&gt;p = CAST(void *, malloc(map-&gt;len))) == NULL) {</a>
+<a name="ln2976">		file_oomem(ms, map-&gt;len);</a>
+<a name="ln2977">		goto error;</a>
+<a name="ln2978">	}</a>
+<a name="ln2979">	if (read(fd, map-&gt;p, map-&gt;len) != (ssize_t)map-&gt;len) {</a>
+<a name="ln2980">		file_badread(ms);</a>
+<a name="ln2981">		goto error;</a>
+<a name="ln2982">	}</a>
+<a name="ln2983">#define RET	1</a>
+<a name="ln2984">#endif</a>
+<a name="ln2985">	(void)close(fd);</a>
+<a name="ln2986">	fd = -1;</a>
+<a name="ln2987"> </a>
+<a name="ln2988">	if (check_buffer(ms, map, dbname) != 0) {</a>
+<a name="ln2989">		rv = (struct magic_map *)-1;</a>
+<a name="ln2990">		goto error;</a>
+<a name="ln2991">	}</a>
+<a name="ln2992">#ifdef QUICK</a>
+<a name="ln2993">	if (mprotect(map-&gt;p, (size_t)st.st_size, PROT_READ) == -1) {</a>
+<a name="ln2994">		file_error(ms, errno, &quot;cannot mprotect `%s'&quot;, dbname);</a>
+<a name="ln2995">		goto error;</a>
+<a name="ln2996">	}</a>
+<a name="ln2997">#endif</a>
+<a name="ln2998"> </a>
+<a name="ln2999">	free(dbname);</a>
+<a name="ln3000">	return map;</a>
+<a name="ln3001"> </a>
+<a name="ln3002">error:</a>
+<a name="ln3003">	if (fd != -1)</a>
+<a name="ln3004">		(void)close(fd);</a>
+<a name="ln3005">	apprentice_unmap(map);</a>
+<a name="ln3006">	free(dbname);</a>
+<a name="ln3007">	return rv;</a>
+<a name="ln3008">}</a>
+<a name="ln3009"> </a>
+<a name="ln3010">private int</a>
+<a name="ln3011">check_buffer(struct magic_set *ms, struct magic_map *map, const char *dbname)</a>
+<a name="ln3012">{</a>
+<a name="ln3013">	uint32_t *ptr;</a>
+<a name="ln3014">	uint32_t entries, nentries;</a>
+<a name="ln3015">	uint32_t version;</a>
+<a name="ln3016">	int i, needsbyteswap;</a>
+<a name="ln3017"> </a>
+<a name="ln3018">	ptr = CAST(uint32_t *, map-&gt;p);</a>
+<a name="ln3019">	if (*ptr != MAGICNO) {</a>
+<a name="ln3020">		if (swap4(*ptr) != MAGICNO) {</a>
+<a name="ln3021">			file_error(ms, 0, &quot;bad magic in `%s'&quot;, dbname);</a>
+<a name="ln3022">			return -1;</a>
+<a name="ln3023">		}</a>
+<a name="ln3024">		needsbyteswap = 1;</a>
+<a name="ln3025">	} else</a>
+<a name="ln3026">		needsbyteswap = 0;</a>
+<a name="ln3027">	if (needsbyteswap)</a>
+<a name="ln3028">		version = swap4(ptr[1]);</a>
+<a name="ln3029">	else</a>
+<a name="ln3030">		version = ptr[1];</a>
+<a name="ln3031">	if (version != VERSIONNO) {</a>
+<a name="ln3032">		file_error(ms, 0, &quot;File %s supports only version %d magic &quot;</a>
+<a name="ln3033">		    &quot;files. `%s' is version %d&quot;, VERSION,</a>
+<a name="ln3034">		    VERSIONNO, dbname, version);</a>
+<a name="ln3035">		return -1;</a>
+<a name="ln3036">	}</a>
+<a name="ln3037">	entries = (uint32_t)(map-&gt;len / sizeof(struct magic));</a>
+<a name="ln3038">	if ((entries * sizeof(struct magic)) != map-&gt;len) {</a>
+<a name="ln3039">		file_error(ms, 0, &quot;Size of `%s' %&quot; SIZE_T_FORMAT &quot;u is not &quot;</a>
+<a name="ln3040">		    &quot;a multiple of %&quot; SIZE_T_FORMAT &quot;u&quot;,</a>
+<a name="ln3041">		    dbname, map-&gt;len, sizeof(struct magic));</a>
+<a name="ln3042">		return -1;</a>
+<a name="ln3043">	}</a>
+<a name="ln3044">	map-&gt;magic[0] = CAST(struct magic *, map-&gt;p) + 1;</a>
+<a name="ln3045">	nentries = 0;</a>
+<a name="ln3046">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln3047">		if (needsbyteswap)</a>
+<a name="ln3048">			map-&gt;nmagic[i] = swap4(ptr[i + 2]);</a>
+<a name="ln3049">		else</a>
+<a name="ln3050">			map-&gt;nmagic[i] = ptr[i + 2];</a>
+<a name="ln3051">		if (i != MAGIC_SETS - 1)</a>
+<a name="ln3052">			map-&gt;magic[i + 1] = map-&gt;magic[i] + map-&gt;nmagic[i];</a>
+<a name="ln3053">		nentries += map-&gt;nmagic[i];</a>
+<a name="ln3054">	}</a>
+<a name="ln3055">	if (entries != nentries + 1) {</a>
+<a name="ln3056">		file_error(ms, 0, &quot;Inconsistent entries in `%s' %u != %u&quot;,</a>
+<a name="ln3057">		    dbname, entries, nentries + 1);</a>
+<a name="ln3058">		return -1;</a>
+<a name="ln3059">	}</a>
+<a name="ln3060">	if (needsbyteswap)</a>
+<a name="ln3061">		for (i = 0; i &lt; MAGIC_SETS; i++)</a>
+<a name="ln3062">			byteswap(map-&gt;magic[i], map-&gt;nmagic[i]);</a>
+<a name="ln3063">	return 0;</a>
+<a name="ln3064">}</a>
+<a name="ln3065"> </a>
+<a name="ln3066">/*</a>
+<a name="ln3067"> * handle an mmaped file.</a>
+<a name="ln3068"> */</a>
+<a name="ln3069">private int</a>
+<a name="ln3070">apprentice_compile(struct magic_set *ms, struct magic_map *map, const char *fn)</a>
+<a name="ln3071">{</a>
+<a name="ln3072">	static const size_t nm = sizeof(*map-&gt;nmagic) * MAGIC_SETS;</a>
+<a name="ln3073">	static const size_t m = sizeof(**map-&gt;magic);</a>
+<a name="ln3074">	int fd = -1;</a>
+<a name="ln3075">	size_t len;</a>
+<a name="ln3076">	char *dbname;</a>
+<a name="ln3077">	int rv = -1;</a>
+<a name="ln3078">	uint32_t i;</a>
+<a name="ln3079">	union {</a>
+<a name="ln3080">		struct magic m;</a>
+<a name="ln3081">		uint32_t h[2 + MAGIC_SETS];</a>
+<a name="ln3082">	} hdr;</a>
+<a name="ln3083"> </a>
+<a name="ln3084">	dbname = mkdbname(ms, fn, 1);</a>
+<a name="ln3085"> </a>
+<a name="ln3086">	if (dbname == NULL) </a>
+<a name="ln3087">		goto out;</a>
+<a name="ln3088"> </a>
+<a name="ln3089">	if ((fd = open(dbname, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, 0644)) == -1) </a>
+<a name="ln3090">	{</a>
+<a name="ln3091">		file_error(ms, errno, &quot;cannot open `%s'&quot;, dbname);</a>
+<a name="ln3092">		goto out;</a>
+<a name="ln3093">	}</a>
+<a name="ln3094">	memset(&amp;hdr, 0, sizeof(hdr));</a>
+<a name="ln3095">	hdr.h[0] = MAGICNO;</a>
+<a name="ln3096">	hdr.h[1] = VERSIONNO;</a>
+<a name="ln3097">	memcpy(hdr.h + 2, map-&gt;nmagic, nm);</a>
+<a name="ln3098"> </a>
+<a name="ln3099">	if (write(fd, &amp;hdr, sizeof(hdr)) != (ssize_t)sizeof(hdr)) {</a>
+<a name="ln3100">		file_error(ms, errno, &quot;error writing `%s'&quot;, dbname);</a>
+<a name="ln3101">		goto out;</a>
+<a name="ln3102">	}</a>
+<a name="ln3103"> </a>
+<a name="ln3104">	for (i = 0; i &lt; MAGIC_SETS; i++) {</a>
+<a name="ln3105">		len = m * map-&gt;nmagic[i];</a>
+<a name="ln3106">		if (write(fd, map-&gt;magic[i], len) != (ssize_t)len) {</a>
+<a name="ln3107">			file_error(ms, errno, &quot;error writing `%s'&quot;, dbname);</a>
+<a name="ln3108">			goto out;</a>
+<a name="ln3109">		}</a>
+<a name="ln3110">	}</a>
+<a name="ln3111"> </a>
+<a name="ln3112">	if (fd != -1)</a>
+<a name="ln3113">		(void)close(fd);</a>
+<a name="ln3114">	rv = 0;</a>
+<a name="ln3115">out:</a>
+<a name="ln3116">	apprentice_unmap(map);</a>
+<a name="ln3117">	free(dbname);</a>
+<a name="ln3118">	return rv;</a>
+<a name="ln3119">}</a>
+<a name="ln3120"> </a>
+<a name="ln3121">private const char ext[] = &quot;.mgc&quot;;</a>
+<a name="ln3122">/*</a>
+<a name="ln3123"> * make a dbname</a>
+<a name="ln3124"> */</a>
+<a name="ln3125">private char *</a>
+<a name="ln3126">mkdbname(struct magic_set *ms, const char *fn, int strip)</a>
+<a name="ln3127">{</a>
+<a name="ln3128">	const char *p, *q;</a>
+<a name="ln3129">	char *buf;</a>
+<a name="ln3130"> </a>
+<a name="ln3131">	if (strip) {</a>
+<a name="ln3132">		if ((p = strrchr(fn, '/')) != NULL)</a>
+<a name="ln3133">			fn = ++p;</a>
+<a name="ln3134">	}</a>
+<a name="ln3135"> </a>
+<a name="ln3136">	for (q = fn; *q; q++)</a>
+<a name="ln3137">		continue;</a>
+<a name="ln3138">	/* Look for .mgc */</a>
+<a name="ln3139">	for (p = ext + sizeof(ext) - 1; p &gt;= ext &amp;&amp; q &gt;= fn; p--, q--)</a>
+<a name="ln3140">		if (*p != *q)</a>
+<a name="ln3141">			break;</a>
+<a name="ln3142"> </a>
+<a name="ln3143">	/* Did not find .mgc, restore q */</a>
+<a name="ln3144">	if (p &gt;= ext)</a>
+<a name="ln3145">		while (*q)</a>
+<a name="ln3146">			q++;</a>
+<a name="ln3147"> </a>
+<a name="ln3148">	q++;</a>
+<a name="ln3149">	/* Compatibility with old code that looked in .mime */</a>
+<a name="ln3150">	if (ms-&gt;flags &amp; MAGIC_MIME) {</a>
+<a name="ln3151">		if (asprintf(&amp;buf, &quot;%.*s.mime%s&quot;, (int)(q - fn), fn, ext) &lt; 0)</a>
+<a name="ln3152">			return NULL;</a>
+<a name="ln3153">		if (access(buf, R_OK) != -1) {</a>
+<a name="ln3154">			ms-&gt;flags &amp;= MAGIC_MIME_TYPE;</a>
+<a name="ln3155">			return buf;</a>
+<a name="ln3156">		}</a>
+<a name="ln3157">		free(buf);</a>
+<a name="ln3158">	}</a>
+<a name="ln3159">	if (asprintf(&amp;buf, &quot;%.*s%s&quot;, (int)(q - fn), fn, ext) &lt; 0)</a>
+<a name="ln3160">		return NULL;</a>
+<a name="ln3161"> </a>
+<a name="ln3162">	/* Compatibility with old code that looked in .mime */</a>
+<a name="ln3163">	if (strstr(fn, &quot;.mime&quot;) != NULL)</a>
+<a name="ln3164">		ms-&gt;flags &amp;= MAGIC_MIME_TYPE;</a>
+<a name="ln3165">	return buf;</a>
+<a name="ln3166">}</a>
+<a name="ln3167"> </a>
+<a name="ln3168">/*</a>
+<a name="ln3169"> * Byteswap an mmap'ed file if needed</a>
+<a name="ln3170"> */</a>
+<a name="ln3171">private void</a>
+<a name="ln3172">byteswap(struct magic *magic, uint32_t nmagic)</a>
+<a name="ln3173">{</a>
+<a name="ln3174">	uint32_t i;</a>
+<a name="ln3175">	for (i = 0; i &lt; nmagic; i++)</a>
+<a name="ln3176">		bs1(&amp;magic[i]);</a>
+<a name="ln3177">}</a>
+<a name="ln3178"> </a>
+<a name="ln3179">/*</a>
+<a name="ln3180"> * swap a short</a>
+<a name="ln3181"> */</a>
+<a name="ln3182">private uint16_t</a>
+<a name="ln3183">swap2(uint16_t sv)</a>
+<a name="ln3184">{</a>
+<a name="ln3185">	uint16_t rv;</a>
+<a name="ln3186">	uint8_t *s = (uint8_t *)(void *)&amp;sv; </a>
+<a name="ln3187">	uint8_t *d = (uint8_t *)(void *)&amp;rv; </a>
+<a name="ln3188">	d[0] = s[1];</a>
+<a name="ln3189">	d[1] = s[0];</a>
+<a name="ln3190">	return rv;</a>
+<a name="ln3191">}</a>
+<a name="ln3192"> </a>
+<a name="ln3193">/*</a>
+<a name="ln3194"> * swap an int</a>
+<a name="ln3195"> */</a>
+<a name="ln3196">private uint32_t</a>
+<a name="ln3197">swap4(uint32_t sv)</a>
+<a name="ln3198">{</a>
+<a name="ln3199">	uint32_t rv;</a>
+<a name="ln3200">	uint8_t *s = (uint8_t *)(void *)&amp;sv; </a>
+<a name="ln3201">	uint8_t *d = (uint8_t *)(void *)&amp;rv; </a>
+<a name="ln3202">	d[0] = s[3];</a>
+<a name="ln3203">	d[1] = s[2];</a>
+<a name="ln3204">	d[2] = s[1];</a>
+<a name="ln3205">	d[3] = s[0];</a>
+<a name="ln3206">	return rv;</a>
+<a name="ln3207">}</a>
+<a name="ln3208"> </a>
+<a name="ln3209">/*</a>
+<a name="ln3210"> * swap a quad</a>
+<a name="ln3211"> */</a>
+<a name="ln3212">private uint64_t</a>
+<a name="ln3213">swap8(uint64_t sv)</a>
+<a name="ln3214">{</a>
+<a name="ln3215">	uint64_t rv;</a>
+<a name="ln3216">	uint8_t *s = (uint8_t *)(void *)&amp;sv; </a>
+<a name="ln3217">	uint8_t *d = (uint8_t *)(void *)&amp;rv; </a>
+<a name="ln3218">#if 0</a>
+<a name="ln3219">	d[0] = s[3];</a>
+<a name="ln3220">	d[1] = s[2];</a>
+<a name="ln3221">	d[2] = s[1];</a>
+<a name="ln3222">	d[3] = s[0];</a>
+<a name="ln3223">	d[4] = s[7];</a>
+<a name="ln3224">	d[5] = s[6];</a>
+<a name="ln3225">	d[6] = s[5];</a>
+<a name="ln3226">	d[7] = s[4];</a>
+<a name="ln3227">#else</a>
+<a name="ln3228">	d[0] = s[7];</a>
+<a name="ln3229">	d[1] = s[6];</a>
+<a name="ln3230">	d[2] = s[5];</a>
+<a name="ln3231">	d[3] = s[4];</a>
+<a name="ln3232">	d[4] = s[3];</a>
+<a name="ln3233">	d[5] = s[2];</a>
+<a name="ln3234">	d[6] = s[1];</a>
+<a name="ln3235">	d[7] = s[0];</a>
+<a name="ln3236">#endif</a>
+<a name="ln3237">	return rv;</a>
+<a name="ln3238">}</a>
+<a name="ln3239"> </a>
+<a name="ln3240">/*</a>
+<a name="ln3241"> * byteswap a single magic entry</a>
+<a name="ln3242"> */</a>
+<a name="ln3243">private void</a>
+<a name="ln3244">bs1(struct magic *m)</a>
+<a name="ln3245">{</a>
+<a name="ln3246">	m-&gt;cont_level = swap2(m-&gt;cont_level);</a>
+<a name="ln3247">	m-&gt;offset = swap4((uint32_t)m-&gt;offset);</a>
+<a name="ln3248">	m-&gt;in_offset = swap4((uint32_t)m-&gt;in_offset);</a>
+<a name="ln3249">	m-&gt;lineno = swap4((uint32_t)m-&gt;lineno);</a>
+<a name="ln3250">	if (IS_STRING(m-&gt;type)) {</a>
+<a name="ln3251">		m-&gt;str_range = swap4(m-&gt;str_range);</a>
+<a name="ln3252">		m-&gt;str_flags = swap4(m-&gt;str_flags);</a>
+<a name="ln3253">	}</a>
+<a name="ln3254">	else {</a>
+<a name="ln3255">		m-&gt;value.q = swap8(m-&gt;value.q);</a>
+<a name="ln3256">		m-&gt;num_mask = swap8(m-&gt;num_mask);</a>
+<a name="ln3257">	}</a>
+<a name="ln3258">}</a>
+<a name="ln3259"> </a>
+<a name="ln3260">protected size_t </a>
+<a name="ln3261">file_pstring_length_size(const struct magic *m)</a>
+<a name="ln3262">{</a>
+<a name="ln3263">	switch (m-&gt;str_flags &amp; PSTRING_LEN) {</a>
+<a name="ln3264">	case PSTRING_1_LE:</a>
+<a name="ln3265">		return 1;</a>
+<a name="ln3266">	case PSTRING_2_LE:</a>
+<a name="ln3267">	case PSTRING_2_BE:</a>
+<a name="ln3268">		return 2;</a>
+<a name="ln3269">	case PSTRING_4_LE:</a>
+<a name="ln3270">	case PSTRING_4_BE:</a>
+<a name="ln3271">		return 4;</a>
+<a name="ln3272">	default:</a>
+<a name="ln3273">		abort();	/* Impossible */</a>
+<a name="ln3274">		return 1;</a>
+<a name="ln3275">	}</a>
+<a name="ln3276">}</a>
+<a name="ln3277">protected size_t</a>
+<a name="ln3278">file_pstring_get_length(const struct magic *m, const char *ss)</a>
+<a name="ln3279">{</a>
+<a name="ln3280">	size_t len = 0;</a>
+<a name="ln3281">	const unsigned char *s = (const unsigned char *)ss;</a>
+<a name="ln3282">	unsigned int s3, s2, s1, s0;</a>
+<a name="ln3283"> </a>
+<a name="ln3284">	switch (m-&gt;str_flags &amp; PSTRING_LEN) {</a>
+<a name="ln3285">	case PSTRING_1_LE:</a>
+<a name="ln3286">		len = *s;</a>
+<a name="ln3287">		break;</a>
+<a name="ln3288">	case PSTRING_2_LE:</a>
+<a name="ln3289">		s0 = s[0];</a>
+<a name="ln3290">		s1 = s[1];</a>
+<a name="ln3291">		len = (s1 &lt;&lt; 8) | s0;</a>
+<a name="ln3292">		break;</a>
+<a name="ln3293">	case PSTRING_2_BE:</a>
+<a name="ln3294">		s0 = s[0];</a>
+<a name="ln3295">		s1 = s[1];</a>
+<a name="ln3296">		len = (s0 &lt;&lt; 8) | s1;</a>
+<a name="ln3297">		break;</a>
+<a name="ln3298">	case PSTRING_4_LE:</a>
+<a name="ln3299">		s0 = s[0];</a>
+<a name="ln3300">		s1 = s[1];</a>
+<a name="ln3301">		s2 = s[2];</a>
+<a name="ln3302">		s3 = s[3];</a>
+<a name="ln3303">		len = (s3 &lt;&lt; 24) | (s2 &lt;&lt; 16) | (s1 &lt;&lt; 8) | s0;</a>
+<a name="ln3304">		break;</a>
+<a name="ln3305">	case PSTRING_4_BE:</a>
+<a name="ln3306">		s0 = s[0];</a>
+<a name="ln3307">		s1 = s[1];</a>
+<a name="ln3308">		s2 = s[2];</a>
+<a name="ln3309">		s3 = s[3];</a>
+<a name="ln3310">		len = (s0 &lt;&lt; 24) | (s1 &lt;&lt; 16) | (s2 &lt;&lt; 8) | s3;</a>
+<a name="ln3311">		break;</a>
+<a name="ln3312">	default:</a>
+<a name="ln3313">		abort();	/* Impossible */</a>
+<a name="ln3314">	}</a>
+<a name="ln3315"> </a>
+<a name="ln3316">	if (m-&gt;str_flags &amp; PSTRING_LENGTH_INCLUDES_ITSELF)</a>
+<a name="ln3317">		len -= file_pstring_length_size(m);</a>
+<a name="ln3318"> </a>
+<a name="ln3319">	return len;</a>
+<a name="ln3320">}</a>
+<a name="ln3321"> </a>
+<a name="ln3322">protected int</a>
+<a name="ln3323">file_magicfind(struct magic_set *ms, const char *name, struct mlist *v)</a>
+<a name="ln3324">{</a>
+<a name="ln3325">	uint32_t i, j;</a>
+<a name="ln3326">	struct mlist *mlist, *ml;</a>
+<a name="ln3327"> </a>
+<a name="ln3328">	mlist = ms-&gt;mlist[1];</a>
+<a name="ln3329"> </a>
+<a name="ln3330">	for (ml = mlist-&gt;next; ml != mlist; ml = ml-&gt;next) {</a>
+<a name="ln3331">		struct magic *ma = ml-&gt;magic;</a>
+<a name="ln3332">		uint32_t nma = ml-&gt;nmagic;</a>
+<a name="ln3333">		for (i = 0; i &lt; nma; i++) {</a>
+<a name="ln3334">			if (ma[i].type != FILE_NAME)</a>
+<a name="ln3335">				continue;</a>
+<a name="ln3336">			if (strcmp(ma[i].value.s, name) == 0) {</a>
+<a name="ln3337">				v-&gt;magic = &amp;ma[i];</a>
+<a name="ln3338">				for (j = i + 1; j &lt; nma; j++)</a>
+<a name="ln3339">				    if (ma[j].cont_level == 0)</a>
+<a name="ln3340">					    break;</a>
+<a name="ln3341">				v-&gt;nmagic = j - i;</a>
+<a name="ln3342">				return 0;</a>
+<a name="ln3343">			}</a>
+<a name="ln3344">		}</a>
+<a name="ln3345">	}</a>
+<a name="ln3346">	return -1;</a>
+<a name="ln3347">}</a>
+</code></pre>
+<div class="balloon" rel="1368"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v595/" target="_blank">V595</a> The 'mset[j].me' pointer was utilized before it was verified against nullptr. Check lines: 1368, 1370.</p></div>
+<div class="balloon" rel="1830"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v519/" target="_blank">V519</a> The 'm' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 1827, 1830.</p></div>
+<div class="balloon" rel="2504"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v519/" target="_blank">V519</a> The '* estr' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 2502, 2504.</p></div>
+<div class="balloon" rel="2961"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v547/" target="_blank">V547</a> Expression 'st.st_size &lt; 8' is always true.</p></div>
+<div class="balloon" rel="3112"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v547/" target="_blank">V547</a> Expression 'fd != - 1' is always true.</p></div>
+<div class="balloon" rel="2959"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v560/" target="_blank">V560</a> A part of conditional expression is always false: st.st_size &gt; 0x7fffffffffffffffL.</p></div>
+<div class="balloon" rel="1338"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'filearr' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="813"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 813, 846</p></div>
+<div class="balloon" rel="1843"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v1086/" target="_blank">V1086</a> A call of the 'memset' function will lead to underflow of the buffer 'm'.</p></div>
+<div class="balloon" rel="3032"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v576/" target="_blank">V576</a> Incorrect format. Consider checking the seventh actual argument of the 'file_error' function. The SIGNED integer type argument is expected.</p></div>
+<div class="balloon" rel="599"><p><span style="font-size:18px">&uarr;</span> <a href="https://pvs-studio.com/en/docs/warnings/v774/" target="_blank">V774</a> The 'ml' pointer was used after the memory was released.</p></div>
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>
