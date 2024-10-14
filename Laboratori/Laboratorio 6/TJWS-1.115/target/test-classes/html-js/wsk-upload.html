@@ -1,0 +1,83 @@
+         <!DOCTYPE html>
+<html>
+    <head>
+        <title>Fast Upload</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width">
+        <style>
+           #drop_zone { border: 10px dashed #ccc; width: 100px; min-height: 100px; margin: 20px auto;}
+            #drop_zone.hover { border: 10px dashed #0c0; }
+            #drop_zone img { display: block; margin: 10px auto; }
+            #drop_zone p { margin: 10px; font-size: 14px; }
+   </style>
+    </head>
+    
+    <body>
+          <input type="file" id="files" name="files[]" multiple />
+  <div id="drop_zone">
+   Drop files here
+  </div> 
+
+  <output id="list"></output>
+  <script>
+     Element.prototype.remove = function() {
+	    this.parentElement.removeChild(this);
+	}
+	NodeList.prototype.remove = HTMLCollection.prototype.remove = function() {
+	    for(var i = 0, len = this.length; i < len; i++) {
+	        if(this[i] && this[i].parentElement) {
+	            this[i].parentElement.removeChild(this[i]);
+	        }
+	    }
+	}
+    var worker = new Worker('fileupload.js');
+    worker.onmessage = function(e) {
+	  var li = document.getElementById(escape(e.data.data));
+	  if (li)
+		  li.remove();
+	  else
+          alert(e.data.data);
+}
+worker.onerror =werror;
+function werror(e) {
+  console.log('ERROR: Line ', e.lineno, ' in ', e.filename, ': ', e.message);
+ }
+function handleFileSelect(evt) {
+ //evt.stopPropagation();
+ evt.preventDefault();
+
+ var files = evt.dataTransfer.files||evt.target.files;
+ // FileList object.
+ try {
+ worker.postMessage({
+ 'files' : files
+ });
+ } catch(e) {
+     alert('Can\'t spawn files to worker - '+e)
+     return
+ }
+ //Sending File list to worker
+ // files is a FileList of File objects. List some properties.
+ var output = [];
+ for (var i = 0, f; f = files[i]; i++) {
+  output.push('<li id="',escape(f.name),'"><strong>', escape(f.name), '</strong> (', f.type || 'n/a', ') - ', f.size, ' bytes, last modified: ', f.lastModifiedDate ? f.lastModifiedDate.toLocaleDateString() : 'n/a', '</li>');
+ }
+ document.getElementById('list').innerHTML = '<ul>' + output.join('') + '</ul>';
+}
+
+function handleDragOver(evt) {
+ //evt.stopPropagation();
+ evt.preventDefault();
+ evt.dataTransfer.dropEffect = 'copy';
+ // Explicitly show this is a copy.
+ return false;
+}
+
+// Setup the dnd listeners.
+var dropZone = document.getElementById('drop_zone');
+dropZone.addEventListener('dragover', handleDragOver, false);
+dropZone.addEventListener('drop', handleFileSelect, false);
+ document.getElementById('files').addEventListener('change', handleFileSelect, false);
+  </script>
+    </body>
+</html>                     
